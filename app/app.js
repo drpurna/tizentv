@@ -7,6 +7,9 @@ class IPTVApp {
         this.playerContainer = document.getElementById('player-container');
         this.content = document.getElementById('content');
         this.splashScreen = document.getElementById('splash-screen');
+        this.searchOverlay = document.getElementById('search-overlay');
+        this.searchInput = document.getElementById('search-input');
+        this.searchButton = document.getElementById('search-button');
         this.startTime = Date.now();
 
         this.init();
@@ -123,13 +126,14 @@ class IPTVApp {
                     </div>
                     <div class="channel-strip" id="strip-${cat}">
                         ${channels.map(ch => {
-                            const thumbnail = ch.logoUrl 
-                                ? `<img class="channel-logo" src="${ch.logoUrl}" alt="${ch.name}" loading="lazy" onerror="this.style.display='none'; this.parentElement.innerHTML='<span class=\'channel-emoji\'>📺</span>';">` 
-                                : `<span class="channel-emoji">📺</span>`;
+                            // Improved image fallback: image and hidden emoji, emoji shows on error
                             return `
                             <div class="channel-item" data-channel-id="${ch.id}" data-focusable="true">
                                 <div class="channel-thumb">
-                                    ${thumbnail}
+                                    ${ch.logoUrl 
+                                        ? `<img class="channel-logo" src="${ch.logoUrl}" alt="${ch.name}" loading="lazy" onerror="this.classList.add('error'); this.style.display='none'; this.parentElement.querySelector('.fallback-emoji').style.display='block';">` 
+                                        : ''}
+                                    <span class="fallback-emoji" style="${ch.logoUrl ? 'display:none;' : 'display:block;'}">📺</span>
                                     <span class="channel-number">${ch.chno}</span>
                                 </div>
                                 <div class="channel-info">
@@ -144,6 +148,7 @@ class IPTVApp {
         }
         this.content.innerHTML = html;
 
+        // Attach event listeners
         document.querySelectorAll('.channel-item').forEach(el => {
             el.addEventListener('click', () => this.playChannel(el.dataset.channelId));
             el.addEventListener('tv-enter', () => this.playChannel(el.dataset.channelId));
@@ -174,34 +179,132 @@ class IPTVApp {
 
     hidePlayer() {
         this.playerContainer.classList.add('hidden');
-        if (this.hls) this.hls.destroy();
+        if (this.hls) {
+            this.hls.destroy();
+            this.hls = null;
+        }
         this.videoPlayer.pause();
         this.videoPlayer.src = '';
     }
 
     loadStream(url) {
         if (Hls.isSupported()) {
-            this.hls = new Hls({ maxBufferLength: 30 });
+            // Optimize HLS for low latency
+            this.hls = new Hls({
+                maxBufferLength: 10,
+                maxMaxBufferLength: 20,
+                liveSyncDurationCount: 3,
+                liveMaxLatencyDurationCount: 5
+            });
             this.hls.loadSource(url);
             this.hls.attachMedia(this.videoPlayer);
-            this.hls.on(Hls.Events.MANIFEST_PARSED, () => this.videoPlayer.play());
+            this.hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                this.videoPlayer.play().catch(e => console.warn('Autoplay prevented:', e));
+            });
+            this.hls.on(Hls.Events.ERROR, (event, data) => {
+                console.error('HLS error:', data);
+                alert('Stream error – try another channel');
+            });
         } else if (this.videoPlayer.canPlayType('application/vnd.apple.mpegurl')) {
             this.videoPlayer.src = url;
-            this.videoPlayer.play();
+            this.videoPlayer.play().catch(e => console.warn('Autoplay prevented:', e));
         } else {
             alert('Unsupported stream format');
         }
     }
 
+    // Search functionality
+    openSearch() {
+        this.searchOverlay.classList.remove('hidden');
+        this.searchInput.focus();
+        // Notify navigation module about new focusable elements
+        if (window.navigationModule) window.navigationModule.rescan();
+    }
+
+    closeSearch() {
+        this.searchOverlay.classList.add('hidden');
+        this.searchInput.value = '';
+        // Optionally refocus on search button
+        this.searchButton.focus();
+        if (window.navigationModule) window.navigationModule.rescan();
+    }
+
+    performSearch(query) {
+        if (!query.trim()) {
+            this.renderRows(); // reset
+            return;
+        }
+        const filtered = this.channels.filter(ch => 
+            ch.name.toLowerCase().includes(query.toLowerCase()) ||
+            (ch.category && ch.category.toLowerCase().includes(query.toLowerCase()))
+        );
+        // Render only search results as a single row
+        this.content.innerHTML = `
+            <div class="category-row">
+                <div class="row-header">
+                    <h2 class="row-title">Search Results: "${query}"</h2>
+                </div>
+                <div class="channel-strip">
+                    ${filtered.map(ch => `
+                        <div class="channel-item" data-channel-id="${ch.id}" data-focusable="true">
+                            <div class="channel-thumb">
+                                ${ch.logoUrl 
+                                    ? `<img class="channel-logo" src="${ch.logoUrl}" alt="${ch.name}" loading="lazy" onerror="this.classList.add('error'); this.style.display='none'; this.parentElement.querySelector('.fallback-emoji').style.display='block';">` 
+                                    : ''}
+                                <span class="fallback-emoji" style="${ch.logoUrl ? 'display:none;' : 'display:block;'}">📺</span>
+                                <span class="channel-number">${ch.chno}</span>
+                            </div>
+                            <div class="channel-info">
+                                <div class="channel-name">${ch.name}</div>
+                                <div class="channel-program">${ch.program}</div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+        // Reattach listeners
+        document.querySelectorAll('.channel-item').forEach(el => {
+            el.addEventListener('click', () => this.playChannel(el.dataset.channelId));
+            el.addEventListener('tv-enter', () => this.playChannel(el.dataset.channelId));
+        });
+        if (window.navigationModule) window.navigationModule.rescan();
+    }
+
     setupEventListeners() {
+        // Player close
         document.querySelector('.close-player').addEventListener('click', () => this.hidePlayer());
         document.querySelector('.close-player').addEventListener('tv-enter', () => this.hidePlayer());
 
+        // Search button
+        this.searchButton.addEventListener('click', () => this.openSearch());
+        this.searchButton.addEventListener('tv-enter', () => this.openSearch());
+
+        // Search close button
+        const closeBtn = this.searchOverlay.querySelector('.search-close');
+        closeBtn.addEventListener('click', () => this.closeSearch());
+        closeBtn.addEventListener('tv-enter', () => this.closeSearch());
+
+        // Search input – listen for Enter key to perform search
+        this.searchInput.addEventListener('keydown', (e) => {
+            if (e.keyCode === 13) { // Enter
+                e.preventDefault();
+                this.performSearch(this.searchInput.value);
+                this.closeSearch(); // optional: close after search
+            }
+        });
+
+        // Global back button handler
         window.addEventListener('tv-back', () => {
             if (!this.playerContainer.classList.contains('hidden')) {
                 this.hidePlayer();
+            } else if (!this.searchOverlay.classList.contains('hidden')) {
+                this.closeSearch();
             }
         });
+
+        // Passive scroll for performance
+        document.addEventListener('scroll', () => {}, { passive: true });
     }
 }
 
