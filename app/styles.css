@@ -1,4 +1,4 @@
-/* Splash screen – static logo like YouTube */
+/* Splash screen – static logo */
 .splash-screen {
     position: fixed;
     top: 0;
@@ -27,7 +27,6 @@
     font-weight: 600;
     color: #ff4d4d;
     margin-bottom: 20px;
-    /* static – no animation */
 }
 
 .splash-tagline {
@@ -36,7 +35,7 @@
     letter-spacing: 1px;
 }
 
-/* App styles */
+/* App base */
 * {
     margin: 0;
     padding: 0;
@@ -57,6 +56,7 @@ body {
     height: 100%;
 }
 
+/* Top bar */
 .top-bar {
     display: flex;
     align-items: center;
@@ -65,13 +65,14 @@ body {
     background: #1a1a1a;
     border-bottom: 1px solid #333;
     flex-shrink: 0;
+    z-index: 100;
 }
 
 .menu-btn {
     background: none;
     border: none;
     color: white;
-    font-size: 24px;
+    font-size: 28px;
     cursor: pointer;
     width: 48px;
     height: 48px;
@@ -114,48 +115,96 @@ body {
     background: #333;
 }
 
+/* Main layout */
 .main-layout {
     display: flex;
     flex: 1;
     overflow: hidden;
+    position: relative;
 }
 
-.sidebar {
-    width: 240px;
-    background: #141414;
-    padding: 20px 0;
+/* Side panel (YouTube TV style drawer) */
+.side-panel {
+    width: 300px;
+    background: #0f0f0f;
+    display: flex;
+    flex-direction: column;
     border-right: 1px solid #2a2a2a;
+    transform: translateX(-100%);
+    transition: transform 0.3s ease;
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 200;
     overflow-y: auto;
 }
 
-.sidebar ul {
-    list-style: none;
+.side-panel.open {
+    transform: translateX(0);
 }
 
-.sidebar-item {
-    padding: 16px 24px;
-    font-size: 18px;
-    font-weight: 500;
+.panel-header {
+    padding: 24px 16px 16px 24px;
+}
+
+.panel-logo {
+    font-size: 22px;
+    font-weight: 600;
+    color: #ff4d4d;
+}
+
+.panel-menu {
+    flex: 1;
+    list-style: none;
+    padding: 8px 0;
+}
+
+.panel-footer {
+    padding: 16px 0;
+    border-top: 1px solid #2a2a2a;
+}
+
+.panel-item {
+    display: flex;
+    align-items: center;
+    padding: 12px 24px;
+    margin: 4px 8px;
+    border-radius: 10px;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: background 0.2s;
     border-left: 4px solid transparent;
 }
 
-.sidebar-item.active {
-    background: #202020;
+.panel-item .icon {
+    font-size: 24px;
+    width: 32px;
+    text-align: center;
+    margin-right: 16px;
+}
+
+.panel-item .label {
+    font-size: 18px;
+    font-weight: 500;
+}
+
+.panel-item.active {
+    background: #1a1a1a;
     border-left-color: #ff4d4d;
 }
 
-.sidebar-item.tv-focused {
+.panel-item.tv-focused {
     background: #2a2a2a;
     border-left-color: #ff4d4d;
-    transform: translateX(4px);
+    outline: none;
 }
 
+/* Main content area with rows */
 .content {
     flex: 1;
-    padding: 30px;
+    padding: 20px 30px;
     overflow-y: auto;
+    background: #0c0c0c;
     scrollbar-width: none;
 }
 
@@ -163,26 +212,72 @@ body {
     display: none;
 }
 
-.channel-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    gap: 24px;
+/* Category row */
+.category-row {
+    margin-bottom: 40px;
 }
 
+.row-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    position: sticky;
+    top: 0;
+    background: #0c0c0c;
+    z-index: 50;
+    padding: 10px 0;
+}
+
+.row-title {
+    font-size: 24px;
+    font-weight: 600;
+    color: #fff;
+}
+
+.row-link {
+    color: #aaa;
+    font-size: 16px;
+    cursor: pointer;
+}
+
+.row-link.tv-focused {
+    color: #ff4d4d;
+    text-decoration: underline;
+}
+
+/* Horizontal scrollable channel strip */
+.channel-strip {
+    display: flex;
+    gap: 20px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 8px; /* space for focus shadow */
+}
+
+.channel-strip::-webkit-scrollbar {
+    display: none;
+}
+
+/* Channel tile */
 .channel-item {
+    flex: 0 0 auto;
+    width: 280px; /* fixed width for horizontal strip */
     background: #1e1e1e;
     border-radius: 12px;
     overflow: hidden;
     cursor: pointer;
-    transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.2s;
-    border: 2px solid transparent;
-    will-change: transform, box-shadow;
+    transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.2s, border-color 0.2s;
+    border: 3px solid transparent;
+    will-change: transform, box-shadow, border-color;
+    position: relative;
 }
 
 .channel-item.tv-focused {
-    transform: scale(1.03);
-    border-color: #ff4d4d;
-    box-shadow: 0 10px 25px rgba(255, 77, 77, 0.4);
+    transform: scale(1.05);
+    border-color: #ff0000;
+    box-shadow: 0 20px 30px -8px rgba(255, 0, 0, 0.4);
+    z-index: 10;
 }
 
 .channel-thumb {
@@ -193,34 +288,58 @@ body {
     justify-content: center;
     font-size: 48px;
     position: relative;
+    transition: filter 0.2s;
 }
 
+/* Gradient overlay on focus */
+.channel-item.tv-focused .channel-thumb::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(circle at center, transparent 40%, rgba(0,0,0,0.6) 100%);
+    pointer-events: none;
+    z-index: 2;
+}
+
+/* Play icon overlay */
 .channel-thumb::after {
     content: "▶";
     position: absolute;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    font-size: 32px;
+    font-size: 48px;
     color: white;
-    background: rgba(0,0,0,0.6);
-    width: 60px;
-    height: 60px;
+    background: rgba(255, 0, 0, 0.8);
+    width: 80px;
+    height: 80px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
     opacity: 0;
-    transition: opacity 0.2s;
+    transition: opacity 0.2s, transform 0.2s;
     pointer-events: none;
+    z-index: 3;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+    border: 2px solid white;
 }
 
 .channel-item.tv-focused .channel-thumb::after {
     opacity: 1;
+    transform: translate(-50%, -50%) scale(1.1);
 }
 
 .channel-info {
     padding: 14px;
+    transition: background 0.2s;
+}
+
+.channel-item.tv-focused .channel-info {
+    background: #2a2a2a;
 }
 
 .channel-name {
@@ -230,6 +349,11 @@ body {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    transition: color 0.2s;
+}
+
+.channel-item.tv-focused .channel-name {
+    color: #ff0000;
 }
 
 .channel-program {
@@ -240,6 +364,7 @@ body {
     text-overflow: ellipsis;
 }
 
+/* Player overlay */
 .player-container {
     position: fixed;
     top: 0;
