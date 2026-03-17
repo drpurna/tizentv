@@ -54,16 +54,36 @@ class IPTVApp {
         lines.forEach(line => {
             line = line.trim();
             if (line.startsWith('#EXTINF:')) {
+                // Extract metadata
                 const nameMatch = line.match(/,([^,]+)$/);
                 const name = nameMatch ? nameMatch[1] : 'Unknown';
+                
+                // Group / category
                 const groupMatch = line.match(/group-title="([^"]+)"/);
                 const category = groupMatch ? groupMatch[1].toLowerCase() : 'general';
+                
+                // Logo URL
                 const logoMatch = line.match(/tvg-logo="([^"]+)"/);
-                const logo = logoMatch ? logoMatch[1] : '📺';
-                current = { name, category, logo, program: 'Live' };
+                const logoUrl = logoMatch ? logoMatch[1] : null;
+                
+                // Channel number (if present, otherwise generate later)
+                const chnoMatch = line.match(/tvg-chno="([^"]+)"/);
+                const chno = chnoMatch ? chnoMatch[1] : null;
+
+                current = {
+                    name,
+                    category,
+                    logoUrl,
+                    chno,
+                    program: 'Live' // placeholder, could be extended with EPG
+                };
             } else if (line && !line.startsWith('#')) {
                 current.streamUrl = line;
                 current.id = channels.length + 1;
+                // If no channel number provided, generate one
+                if (!current.chno) {
+                    current.chno = String(100 + channels.length);
+                }
                 channels.push(current);
                 current = {};
             }
@@ -72,29 +92,28 @@ class IPTVApp {
     }
 
     getFallbackChannels() {
+        // Fallback channels with placeholder data
         return [
-            { id:1, name:'BBC News', category:'news', logo:'📰', program:'World News', streamUrl:'' },
-            { id:2, name:'Sky Sports', category:'sports', logo:'⚽', program:'Football Live', streamUrl:'' },
-            { id:3, name:'HBO', category:'movies', logo:'🎬', program:'Movie: Inception', streamUrl:'' },
-            { id:4, name:'Comedy Central', category:'entertainment', logo:'😂', program:'Stand-up', streamUrl:'' },
-            { id:5, name:'CNN', category:'news', logo:'📡', program:'Breaking News', streamUrl:'' },
-            { id:6, name:'ESPN', category:'sports', logo:'🏀', program:'NBA Tonight', streamUrl:'' },
-            { id:7, name:'Fox News', category:'news', logo:'🦊', program:'The Story', streamUrl:'' },
-            { id:8, name:'Nat Geo', category:'entertainment', logo:'🌍', program:'Wildlife', streamUrl:'' }
+            { id:1, name:'BBC News', category:'news', logoUrl:null, chno:'101', program:'World News', streamUrl:'' },
+            { id:2, name:'Sky Sports', category:'sports', logoUrl:null, chno:'202', program:'Football Live', streamUrl:'' },
+            { id:3, name:'HBO', category:'movies', logoUrl:null, chno:'305', program:'Movie: Inception', streamUrl:'' },
+            { id:4, name:'Comedy Central', category:'entertainment', logoUrl:null, chno:'410', program:'Stand-up', streamUrl:'' },
+            { id:5, name:'CNN', category:'news', logoUrl:null, chno:'102', program:'Breaking News', streamUrl:'' },
+            { id:6, name:'ESPN', category:'sports', logoUrl:null, chno:'203', program:'NBA Tonight', streamUrl:'' },
+            { id:7, name:'Fox News', category:'news', logoUrl:null, chno:'103', program:'The Story', streamUrl:'' },
+            { id:8, name:'Nat Geo', category:'entertainment', logoUrl:null, chno:'411', program:'Wildlife', streamUrl:'' }
         ];
     }
 
     renderRows() {
         // Group channels by category
         const categories = {
+            recommended: this.channels.slice(0, 10), // first 10 as recommended
             news: this.channels.filter(c => c.category === 'news'),
             sports: this.channels.filter(c => c.category === 'sports'),
             movies: this.channels.filter(c => c.category === 'movies'),
             entertainment: this.channels.filter(c => c.category === 'entertainment')
         };
-
-        // Also include "Recommended" (mix of all) – you can customize
-        categories.recommended = this.channels.slice(0, 10); // first 10 as sample
 
         const categoryNames = {
             recommended: 'Recommended',
@@ -114,15 +133,23 @@ class IPTVApp {
                         <span class="row-link" data-focusable="true">More ›</span>
                     </div>
                     <div class="channel-strip" id="strip-${cat}">
-                        ${channels.map(ch => `
+                        ${channels.map(ch => {
+                            // Use logo if available, else fallback emoji
+                            const thumbnail = ch.logoUrl 
+                                ? `<img class="channel-logo" src="${ch.logoUrl}" alt="${ch.name}" loading="lazy" onerror="this.style.display='none'; this.parentElement.innerHTML='📺';">` 
+                                : `<span class="channel-emoji">📺</span>`;
+                            return `
                             <div class="channel-item" data-channel-id="${ch.id}" data-focusable="true">
-                                <div class="channel-thumb">${ch.logo}</div>
+                                <div class="channel-thumb">
+                                    ${thumbnail}
+                                    <span class="channel-number">${ch.chno}</span>
+                                </div>
                                 <div class="channel-info">
                                     <div class="channel-name">${ch.name}</div>
                                     <div class="channel-program">${ch.program}</div>
                                 </div>
                             </div>
-                        `).join('')}
+                        `}).join('')}
                     </div>
                 </div>
             `;
@@ -135,11 +162,11 @@ class IPTVApp {
             el.addEventListener('tv-enter', () => this.playChannel(el.dataset.channelId));
         });
 
-        // "More" links could scroll to that row or expand – for now, just keep focusable
+        // "More" links – could be implemented later
         document.querySelectorAll('.row-link').forEach(el => {
             el.addEventListener('click', (e) => {
-                // Optional: could navigate to a full category view
                 e.stopPropagation();
+                // Optional: navigate to full category view
             });
         });
 
@@ -185,16 +212,13 @@ class IPTVApp {
     }
 
     setupEventListeners() {
-        // Close player with back button
         document.querySelector('.close-player').addEventListener('click', () => this.hidePlayer());
         document.querySelector('.close-player').addEventListener('tv-enter', () => this.hidePlayer());
 
-        // Global back button (from remote)
         window.addEventListener('tv-back', () => {
             if (!this.playerContainer.classList.contains('hidden')) {
                 this.hidePlayer();
             }
-            // If no player, maybe exit app – handled by system
         });
     }
 }
