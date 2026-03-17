@@ -17,8 +17,9 @@
     </div>
 
     <div id="app">
+        <!-- Top bar with menu button -->
         <header class="top-bar">
-            <button class="menu-btn" data-focusable="true">☰</button>
+            <button class="menu-btn" id="menu-toggle" data-focusable="true">☰</button>
             <div class="logo">📺 SMART TV</div>
             <div class="top-actions">
                 <span class="search-icon" data-focusable="true">🔍</span>
@@ -27,21 +28,48 @@
         </header>
 
         <div class="main-layout">
-            <nav class="sidebar" id="sidebar">
-                <ul>
-                    <li data-category="all" class="sidebar-item active" data-focusable="true">🏠 Home</li>
-                    <li data-category="news" class="sidebar-item" data-focusable="true">📰 News</li>
-                    <li data-category="sports" class="sidebar-item" data-focusable="true">⚽ Sports</li>
-                    <li data-category="movies" class="sidebar-item" data-focusable="true">🎬 Movies</li>
-                    <li data-category="entertainment" class="sidebar-item" data-focusable="true">🎉 Entertainment</li>
+            <!-- Side panel (hidden by default) -->
+            <nav class="side-panel" id="side-panel">
+                <div class="panel-header">
+                    <div class="panel-logo">📺 SMART TV</div>
+                </div>
+                <ul class="panel-menu">
+                    <li data-category="all" class="panel-item active" data-focusable="true">
+                        <span class="icon">🏠</span>
+                        <span class="label">Home</span>
+                    </li>
+                    <li data-category="news" class="panel-item" data-focusable="true">
+                        <span class="icon">📰</span>
+                        <span class="label">News</span>
+                    </li>
+                    <li data-category="sports" class="panel-item" data-focusable="true">
+                        <span class="icon">⚽</span>
+                        <span class="label">Sports</span>
+                    </li>
+                    <li data-category="movies" class="panel-item" data-focusable="true">
+                        <span class="icon">🎬</span>
+                        <span class="label">Movies</span>
+                    </li>
+                    <li data-category="entertainment" class="panel-item" data-focusable="true">
+                        <span class="icon">🎉</span>
+                        <span class="label">Entertainment</span>
+                    </li>
                 </ul>
+                <div class="panel-footer">
+                    <div class="panel-item" data-focusable="true">
+                        <span class="icon">⚙️</span>
+                        <span class="label">Settings</span>
+                    </div>
+                </div>
             </nav>
 
-            <main class="content">
-                <div class="channel-grid" id="channel-grid"></div>
+            <!-- Main content with category rows -->
+            <main class="content" id="content">
+                <!-- Rows will be dynamically injected by JavaScript -->
             </main>
         </div>
 
+        <!-- Fullscreen video player -->
         <div id="player-container" class="player-container hidden">
             <video id="video-player" class="video-player" autoplay controls></video>
             <button class="close-player" data-action="back" data-focusable="true">✖ Close</button>
