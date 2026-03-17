@@ -6,8 +6,9 @@ class IPTVApp {
         this.hls = null;
         this.videoPlayer = document.getElementById('video-player');
         this.playerContainer = document.getElementById('player-container');
-        this.channelGrid = document.getElementById('channel-grid');
-        this.sidebar = document.getElementById('sidebar');
+        this.content = document.getElementById('content');
+        this.sidePanel = document.getElementById('side-panel');
+        this.menuToggle = document.getElementById('menu-toggle');
         this.splashScreen = document.getElementById('splash-screen');
         this.startTime = Date.now();
 
@@ -16,8 +17,8 @@ class IPTVApp {
 
     async init() {
         await this.loadChannels();
-        this.renderSidebar();
-        this.renderChannels();
+        this.renderSidePanel();
+        this.renderRows();
         this.setupEventListeners();
         this.hideSplash();
     }
@@ -78,47 +79,97 @@ class IPTVApp {
         return [
             { id:1, name:'BBC News', category:'news', logo:'📰', program:'World News', streamUrl:'' },
             { id:2, name:'Sky Sports', category:'sports', logo:'⚽', program:'Football Live', streamUrl:'' },
-            { id:3, name:'HBO', category:'movies', logo:'🎬', program:'Movie', streamUrl:'' },
-            { id:4, name:'Comedy Central', category:'entertainment', logo:'😂', program:'Stand-up', streamUrl:'' }
+            { id:3, name:'HBO', category:'movies', logo:'🎬', program:'Movie: Inception', streamUrl:'' },
+            { id:4, name:'Comedy Central', category:'entertainment', logo:'😂', program:'Stand-up', streamUrl:'' },
+            { id:5, name:'CNN', category:'news', logo:'📡', program:'Breaking News', streamUrl:'' },
+            { id:6, name:'ESPN', category:'sports', logo:'🏀', program:'NBA Tonight', streamUrl:'' },
+            { id:7, name:'Fox News', category:'news', logo:'🦊', program:'The Story', streamUrl:'' },
+            { id:8, name:'Nat Geo', category:'entertainment', logo:'🌍', program:'Wildlife', streamUrl:'' }
         ];
     }
 
-    renderSidebar() {
-        this.sidebar.querySelectorAll('.sidebar-item').forEach(item => {
+    renderSidePanel() {
+        const items = this.sidePanel.querySelectorAll('.panel-item[data-category]');
+        items.forEach(item => {
             item.addEventListener('click', () => {
-                this.filterByCategory(item.dataset.category);
+                const category = item.dataset.category;
+                this.filterByCategory(category);
+                this.closePanel();
             });
         });
     }
 
     filterByCategory(category) {
         this.currentCategory = category;
-        this.sidebar.querySelectorAll('.sidebar-item').forEach(item => {
+        // Update active state in panel
+        this.sidePanel.querySelectorAll('.panel-item').forEach(item => {
             item.classList.toggle('active', item.dataset.category === category);
         });
-        this.renderChannels();
+        // Scroll to the selected category row
+        const targetRow = document.getElementById(`row-${category}`);
+        if (targetRow) {
+            targetRow.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
     }
 
-    renderChannels() {
-        const filtered = this.currentCategory === 'all'
-            ? this.channels
-            : this.channels.filter(c => c.category === this.currentCategory);
+    renderRows() {
+        // Group channels by category
+        const categories = {
+            all: this.channels,
+            news: this.channels.filter(c => c.category === 'news'),
+            sports: this.channels.filter(c => c.category === 'sports'),
+            movies: this.channels.filter(c => c.category === 'movies'),
+            entertainment: this.channels.filter(c => c.category === 'entertainment')
+        };
 
-        this.channelGrid.innerHTML = filtered.map(ch => `
-            <div class="channel-item" data-channel-id="${ch.id}" data-focusable="true">
-                <div class="channel-thumb">${ch.logo}</div>
-                <div class="channel-info">
-                    <div class="channel-name">${ch.name}</div>
-                    <div class="channel-program">${ch.program}</div>
+        const categoryNames = {
+            all: 'Recommended',
+            news: 'News',
+            sports: 'Sports',
+            movies: 'Movies',
+            entertainment: 'Entertainment'
+        };
+
+        let html = '';
+        for (let [cat, channels] of Object.entries(categories)) {
+            if (channels.length === 0) continue;
+            html += `
+                <div class="category-row" id="row-${cat}">
+                    <div class="row-header">
+                        <h2 class="row-title">${categoryNames[cat]}</h2>
+                        <span class="row-link" data-focusable="true">More ›</span>
+                    </div>
+                    <div class="channel-strip" id="strip-${cat}">
+                        ${channels.map(ch => `
+                            <div class="channel-item" data-channel-id="${ch.id}" data-focusable="true">
+                                <div class="channel-thumb">${ch.logo}</div>
+                                <div class="channel-info">
+                                    <div class="channel-name">${ch.name}</div>
+                                    <div class="channel-program">${ch.program}</div>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
                 </div>
-            </div>
-        `).join('');
+            `;
+        }
+        this.content.innerHTML = html;
 
+        // Attach event listeners to all channel items
         document.querySelectorAll('.channel-item').forEach(el => {
             el.addEventListener('click', () => this.playChannel(el.dataset.channelId));
             el.addEventListener('tv-enter', () => this.playChannel(el.dataset.channelId));
         });
 
+        // Attach listeners to "More" links (optional, could show full category)
+        document.querySelectorAll('.row-link').forEach(el => {
+            el.addEventListener('click', (e) => {
+                // For now, just scroll to that row's header (already visible)
+                e.stopPropagation();
+            });
+        });
+
+        // Notify navigation module to rescan
         if (window.navigationModule) window.navigationModule.rescan();
     }
 
@@ -160,12 +211,44 @@ class IPTVApp {
     }
 
     setupEventListeners() {
+        // Menu toggle
+        this.menuToggle.addEventListener('click', () => this.togglePanel());
+        this.menuToggle.addEventListener('tv-enter', () => this.togglePanel());
+
+        // Close panel when clicking outside (if open)
+        document.addEventListener('click', (e) => {
+            if (this.sidePanel.classList.contains('open') &&
+                !this.sidePanel.contains(e.target) &&
+                !this.menuToggle.contains(e.target)) {
+                this.closePanel();
+            }
+        });
+
+        // Close player
         document.querySelector('.close-player').addEventListener('click', () => this.hidePlayer());
         document.querySelector('.close-player').addEventListener('tv-enter', () => this.hidePlayer());
 
+        // Global back button (from remote)
         window.addEventListener('tv-back', () => {
-            if (!this.playerContainer.classList.contains('hidden')) this.hidePlayer();
+            if (!this.playerContainer.classList.contains('hidden')) {
+                this.hidePlayer();
+            } else if (this.sidePanel.classList.contains('open')) {
+                this.closePanel();
+            }
         });
+    }
+
+    togglePanel() {
+        this.sidePanel.classList.toggle('open');
+        if (this.sidePanel.classList.contains('open')) {
+            // Focus first panel item for remote navigation
+            const firstItem = this.sidePanel.querySelector('.panel-item');
+            if (firstItem) firstItem.focus();
+        }
+    }
+
+    closePanel() {
+        this.sidePanel.classList.remove('open');
     }
 }
 
