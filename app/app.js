@@ -7,8 +7,6 @@ class IPTVApp {
         this.playerContainer = document.getElementById('player-container');
         this.content = document.getElementById('content');
         this.splashScreen = document.getElementById('splash-screen');
-        this.sidePanel = document.getElementById('side-panel');
-        this.menuToggle = document.getElementById('menu-toggle');
         this.searchOverlay = document.getElementById('search-overlay');
         this.searchInput = document.getElementById('search-input');
         this.searchButton = document.getElementById('search-button');
@@ -19,7 +17,6 @@ class IPTVApp {
 
     async init() {
         await this.loadChannels();
-        this.renderSidePanel();
         this.renderRows();
         this.setupEventListeners();
         this.hideSplash();
@@ -99,28 +96,6 @@ class IPTVApp {
             { id:7, name:'Fox News', category:'news', logoUrl:null, chno:'103', program:'The Story', streamUrl:'' },
             { id:8, name:'Nat Geo', category:'entertainment', logoUrl:null, chno:'411', program:'Wildlife', streamUrl:'' }
         ];
-    }
-
-    renderSidePanel() {
-        const items = this.sidePanel.querySelectorAll('.panel-item[data-category]');
-        items.forEach(item => {
-            item.addEventListener('click', () => {
-                const category = item.dataset.category;
-                this.filterByCategory(category);
-                this.closePanel();
-            });
-        });
-    }
-
-    filterByCategory(category) {
-        this.currentCategory = category;
-        this.sidePanel.querySelectorAll('.panel-item').forEach(item => {
-            item.classList.toggle('active', item.dataset.category === category);
-        });
-        const targetRow = document.getElementById(`row-${category}`);
-        if (targetRow) {
-            targetRow.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
     }
 
     renderRows() {
@@ -289,36 +264,7 @@ class IPTVApp {
         if (window.navigationModule) window.navigationModule.rescan();
     }
 
-    // UI helpers
-    togglePanel() {
-        this.sidePanel.classList.toggle('open');
-        if (this.sidePanel.classList.contains('open')) {
-            const firstItem = this.sidePanel.querySelector('.panel-item');
-            if (firstItem) firstItem.focus();
-        }
-        if (window.navigationModule) window.navigationModule.rescan();
-    }
-
-    closePanel() {
-        this.sidePanel.classList.remove('open');
-        this.menuToggle.focus();
-        if (window.navigationModule) window.navigationModule.rescan();
-    }
-
     setupEventListeners() {
-        // Menu toggle
-        this.menuToggle.addEventListener('click', () => this.togglePanel());
-        this.menuToggle.addEventListener('tv-enter', () => this.togglePanel());
-
-        // Close panel when clicking outside
-        document.addEventListener('click', (e) => {
-            if (this.sidePanel.classList.contains('open') &&
-                !this.sidePanel.contains(e.target) &&
-                !this.menuToggle.contains(e.target)) {
-                this.closePanel();
-            }
-        });
-
         // Player close
         document.querySelector('.close-player').addEventListener('click', () => this.hidePlayer());
         document.querySelector('.close-player').addEventListener('tv-enter', () => this.hidePlayer());
@@ -354,8 +300,6 @@ class IPTVApp {
         window.addEventListener('tv-back', () => {
             if (!this.playerContainer.classList.contains('hidden')) {
                 this.hidePlayer();
-            } else if (this.sidePanel.classList.contains('open')) {
-                this.closePanel();
             } else if (!this.searchOverlay.classList.contains('hidden')) {
                 this.closeSearch();
             }
