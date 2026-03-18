@@ -82,7 +82,6 @@ body {
     font-size: 4rem;
     font-weight: 600;
     color: var(--tv-red-light);
-    margin-bottom: 1.5rem;
     font-family: 'Trade Gothic', 'GT America', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     letter-spacing: -0.02em;
 }
@@ -110,14 +109,6 @@ body {
     transform: translate(-50%, -50%);
 }
 
-.splash-tagline {
-    font-size: 1.5rem;
-    color: var(--text-secondary);
-    letter-spacing: 1px;
-    font-family: Roboto, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
-    font-weight: 400;
-}
-
 /* ===== TOP BAR ===== */
 .top-bar {
     display: flex;
@@ -128,25 +119,6 @@ body {
     border-bottom: 1px solid var(--border-color);
     flex-shrink: 0;
     z-index: 100;
-}
-
-.menu-btn {
-    background: none;
-    border: none;
-    color: white;
-    font-size: 1.75rem;
-    cursor: pointer;
-    width: 3rem;
-    height: 3rem;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: background 0.2s;
-}
-
-.menu-btn.tv-focused {
-    background: #333;
 }
 
 .logo {
@@ -216,83 +188,6 @@ body {
 
 .youtube-icon-small.tv-focused {
     background: #333;
-}
-
-/* ===== SIDE PANEL ===== */
-.side-panel {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 300px;
-    height: 100%;
-    background: #0f0f0f;
-    border-right: 1px solid var(--border-color);
-    transform: translateX(-100%);
-    transition: transform 0.3s ease;
-    z-index: 200;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-}
-
-.side-panel.open {
-    transform: translateX(0);
-}
-
-.panel-header {
-    padding: 2rem 1rem 1rem 1.5rem;
-}
-
-.panel-logo {
-    font-size: 1.4rem;
-    font-weight: 600;
-    color: var(--tv-red-light);
-    font-family: 'Trade Gothic', 'GT America', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-}
-
-.panel-menu {
-    flex: 1;
-    list-style: none;
-    padding: 0.5rem 0;
-}
-
-.panel-footer {
-    padding: 1rem 0;
-    border-top: 1px solid var(--border-color);
-}
-
-.panel-item {
-    display: flex;
-    align-items: center;
-    padding: 0.75rem 1.5rem;
-    margin: 0.25rem 0.5rem;
-    border-radius: 10px;
-    cursor: pointer;
-    transition: background 0.2s;
-    border-left: 4px solid transparent;
-}
-
-.panel-item .icon {
-    font-size: 1.5rem;
-    width: 2rem;
-    text-align: center;
-    margin-right: 1rem;
-}
-
-.panel-item .label {
-    font-size: 1.1rem;
-    font-weight: 500;
-    font-family: Roboto, sans-serif;
-}
-
-.panel-item.active {
-    background: #1a1a1a;
-    border-left-color: var(--tv-red-light);
-}
-
-.panel-item.tv-focused {
-    background: #2a2a2a;
-    border-left-color: var(--tv-red-light);
 }
 
 /* ===== SEARCH OVERLAY ===== */
@@ -612,11 +507,9 @@ body {
 /* ===== RESPONSIVE MEDIA QUERIES FOR 2K/4K ===== */
 @media screen and (min-width: 2000px) {
     .splash-logo { font-size: 5rem; }
-    .splash-tagline { font-size: 2rem; }
     .logo { font-size: 1.8rem; }
-    .search-icon, .menu-btn, .youtube-icon-small { width: 4rem; height: 4rem; font-size: 2rem; }
+    .search-icon, .youtube-icon-small { width: 4rem; height: 4rem; font-size: 2rem; }
     .youtube-icon-small .youtube-red { width: 2.4rem; height: 1.7rem; }
-    .panel-item .label { font-size: 1.4rem; }
     .row-title { font-size: 2rem; }
     .row-link { font-size: 1.4rem; }
     .channel-item { width: 22rem; }
@@ -630,11 +523,9 @@ body {
 
 @media screen and (min-width: 3500px) {
     .splash-logo { font-size: 7rem; }
-    .splash-tagline { font-size: 2.5rem; }
     .logo { font-size: 2.2rem; }
-    .search-icon, .menu-btn, .youtube-icon-small { width: 5rem; height: 5rem; font-size: 2.5rem; }
+    .search-icon, .youtube-icon-small { width: 5rem; height: 5rem; font-size: 2.5rem; }
     .youtube-icon-small .youtube-red { width: 3rem; height: 2.2rem; }
-    .panel-item .label { font-size: 1.8rem; }
     .row-title { font-size: 2.5rem; }
     .row-link { font-size: 1.8rem; }
     .channel-item { width: 28rem; }
