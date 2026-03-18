@@ -5,12 +5,12 @@ body {
   overflow: hidden;
 }
 
-/* AVPlay */
+/* video layer */
 #player {
   position: fixed;
   inset: 0;
-  z-index: 0;
   background: black;
+  z-index: 0;
 }
 
 /* UI */
@@ -20,13 +20,13 @@ body {
   padding: 70px;
 }
 
-/* overlay info */
+/* overlay */
 #overlay {
   position: fixed;
   bottom: 60px;
   left: 80px;
-  color: white;
-  font-size: 22px;
+  color: #fff;
+  font-size: 24px;
   opacity: 0;
   transition: opacity 0.3s;
 }
@@ -42,13 +42,13 @@ body {
   margin-bottom: 10px;
 }
 
-/* horizontal scroll */
+/* horizontal */
 .row-items {
   display: flex;
   gap: 20px;
 }
 
-/* tile */
+/* tiles */
 .card {
   width: 260px;
   height: 150px;
@@ -60,7 +60,6 @@ body {
   transition: transform 0.2s ease, box-shadow 0.2s;
 }
 
-/* logo */
 .card img {
   max-width: 75%;
   max-height: 75%;
