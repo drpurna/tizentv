@@ -20,8 +20,9 @@
     </div>
 
     <div id="app">
-        <!-- Top bar with search and YouTube icon (no profile) -->
+        <!-- Top bar with search and YouTube icon -->
         <header class="top-bar">
+            <button class="menu-btn" id="menu-toggle" data-focusable="true">☰</button>
             <div class="logo">📺 $mart TV</div>
             <div class="top-actions">
                 <span class="search-icon" id="search-button" data-focusable="true">🔍</span>
@@ -30,6 +31,41 @@
                 </span>
             </div>
         </header>
+
+        <!-- Side panel (hidden by default) -->
+        <nav class="side-panel" id="side-panel">
+            <div class="panel-header">
+                <div class="panel-logo">📺 $mart TV</div>
+            </div>
+            <ul class="panel-menu">
+                <li data-category="all" class="panel-item active" data-focusable="true">
+                    <span class="icon">🏠</span>
+                    <span class="label">Home</span>
+                </li>
+                <li data-category="news" class="panel-item" data-focusable="true">
+                    <span class="icon">📰</span>
+                    <span class="label">News</span>
+                </li>
+                <li data-category="sports" class="panel-item" data-focusable="true">
+                    <span class="icon">⚽</span>
+                    <span class="label">Sports</span>
+                </li>
+                <li data-category="movies" class="panel-item" data-focusable="true">
+                    <span class="icon">🎬</span>
+                    <span class="label">Movies</span>
+                </li>
+                <li data-category="entertainment" class="panel-item" data-focusable="true">
+                    <span class="icon">🎉</span>
+                    <span class="label">Entertainment</span>
+                </li>
+            </ul>
+            <div class="panel-footer">
+                <div class="panel-item" data-focusable="true">
+                    <span class="icon">⚙️</span>
+                    <span class="label">Settings</span>
+                </div>
+            </div>
+        </nav>
 
         <!-- Search overlay -->
         <div id="search-overlay" class="search-overlay hidden">
