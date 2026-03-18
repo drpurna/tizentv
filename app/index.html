@@ -1,42 +1,20 @@
 <!doctype html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Tizen TV</title>
-  <link rel="stylesheet" href="./style.css"/>
+<meta charset="UTF-8">
+<title>Tizen TV</title>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<div class="app">
+<div id="player"></div>
 
-  <!-- 🔍 Search -->
-  <div class="topbar">
-    <div id="searchIcon" class="search-icon">🔍</div>
-  </div>
-
-  <!-- 🔎 Search Overlay -->
-  <div id="searchOverlay" class="search-overlay hidden">
-    <input id="searchInput" placeholder="Search channels..."/>
-    <div id="searchResults"></div>
-  </div>
-
-  <!-- 🎬 Player -->
-  <div class="player-layer">
-    <video id="video" autoplay></video>
-    <div class="overlay">
-      <h1 id="nowPlaying">Select a channel</h1>
-      <p id="statusText">Idle</p>
-    </div>
-  </div>
-
-  <!-- 📺 Rows -->
-  <div id="rowsContainer" class="rows"></div>
-
+<div id="ui">
+  <div id="overlay"></div>
+  <div id="rows"></div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-<script src="./app.js"></script>
+<script src="app.js"></script>
 
 </body>
 </html>
