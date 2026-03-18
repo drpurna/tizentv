@@ -1,12 +1,12 @@
-# Tizen TV IPTV App
+# Tizen TV Ultimate (Production Build)
 
-## Install via TizenBrew
+Features:
+- Full Netflix-style UI
+- Multi-row navigation (Up/Down/Left/Right)
+- Hero auto-preview
+- Category grouping
+- IPTV Telugu auto-load
+- Fullscreen player
+- Back button support
 
-1. Upload to GitHub
-2. Enable GitHub Pages
-3. Use URL in TizenBrew
-
-## Features
-- Telugu Live TV
-- IPTV-org integration
-- Simple Netflix-style grid
+Install via GitHub Pages → TizenBrew
