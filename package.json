@@ -21,21 +21,4 @@
     "url": "https://github.com/drpurna/tizentv"
   },
   "license": "MIT",
-  "tizenbrew": {
-    "moduleType": "mods",
-    "appName": "Smart TV",
-    "packageName": "com.drpurna.tizentv",
-    "version": "2.0.0",
-    "tizenVersion": "4.0",
-    "requiredPermissions": [
-      "http://tizen.org/privilege/internet",
-      "http://tizen.org/privilege/application.launch"
-    ],
-    "icon": "app/icon.png",
-    "screenshots": [],
-    "repository": {
-      "type": "git",
-      "url": "https://github.com/drpurna/tizentv"
-    }
-  }
 }
