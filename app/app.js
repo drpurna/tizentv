@@ -1,364 +1,212 @@
-const searchInput = document.getElementById('searchInput');
-const channelListEl = document.getElementById('channelList');
+const video = document.getElementById('video');
+const rowsContainer = document.getElementById('rowsContainer');
 const nowPlayingEl = document.getElementById('nowPlaying');
 const statusTextEl = document.getElementById('statusText');
-const video = document.getElementById('video');
-const categoryBar = document.getElementById('categoryBar');
+
+const searchIcon = document.getElementById('searchIcon');
+const searchOverlay = document.getElementById('searchOverlay');
+const searchInput = document.getElementById('searchInput');
+const searchResults = document.getElementById('searchResults');
 
 let channels = [];
-let filtered = [];
-let selectedIndex = 0;
-let focusArea = 'list'; // list | player
-let hls = null;
+let rows = {};
+let rowKeys = [];
 
-const PLAYLIST_URL = 'https://iptv-org.github.io/iptv/languages/tel.m3u';
+let focus = { row: 0, col: 0 };
+let focusArea = "rows";
 
-function setStatus(text) {
-  statusTextEl.textContent = text;
+const PLAYLIST = "https://iptv-org.github.io/iptv/languages/tel.m3u";
+
+async function init() {
+  const text = await fetch(PLAYLIST).then(r => r.text());
+  channels = parseM3U(text);
+  buildRows();
+  renderRows();
+  updateFocus();
 }
 
 function parseM3U(text) {
-  const lines = text.split(/\r?\n/);
+  const lines = text.split(/\n/);
   const out = [];
-  let currentMeta = null;
+  let meta = {};
 
-  for (const raw of lines) {
-    const line = raw.trim();
+  for (let line of lines) {
+    line = line.trim();
     if (!line) continue;
 
-    if (line.startsWith('#EXTINF')) {
-      const namePart = line.includes(',') ? line.split(',').slice(1).join(',').trim() : 'Unknown';
-      const groupMatch = line.match(/group-title="([^"]+)"/i);
-      const logoMatch = line.match(/tvg-logo="([^"]+)"/i);
-      currentMeta = {
-        name: namePart || 'Unknown',
-        group: groupMatch ? groupMatch[1] : 'Other',
-        logo: logoMatch ? logoMatch[1] : null,
-      };
-      continue;
-    }
-
-    if (!line.startsWith('#')) {
-      const item = {
-        name: currentMeta?.name || line,
-        group: currentMeta?.group || 'Other',
-        logo: currentMeta?.logo || null,
-        url: line,
-      };
-      out.push(item);
-      currentMeta = null;
+    if (line.startsWith("#EXTINF")) {
+      meta.name = line.split(",").pop();
+      const g = line.match(/group-title="([^"]+)"/);
+      const l = line.match(/tvg-logo="([^"]+)"/);
+      meta.group = g ? g[1] : "Other";
+      meta.logo = l ? l[1] : null;
+    } else if (!line.startsWith("#")) {
+      out.push({ ...meta, url: line });
     }
   }
   return out;
 }
 
-function updateCategoryBar(allChannels) {
-  const groups = [...new Set(allChannels.map(ch => ch.group))].sort();
-  categoryBar.innerHTML = '';
-
-  const allBtn = document.createElement('button');
-  allBtn.textContent = 'All';
-  allBtn.classList.add('category-btn', 'active');
-  allBtn.dataset.group = '';
-  allBtn.addEventListener('click', () => {
-    filterByGroup('');
-    highlightCategory(allBtn);
+function buildRows() {
+  rows = {};
+  channels.forEach(ch => {
+    if (!rows[ch.group]) rows[ch.group] = [];
+    rows[ch.group].push(ch);
   });
-  categoryBar.appendChild(allBtn);
-
-  groups.forEach(group => {
-    const btn = document.createElement('button');
-    btn.textContent = group;
-    btn.classList.add('category-btn');
-    btn.dataset.group = group;
-    btn.addEventListener('click', () => {
-      filterByGroup(group);
-      highlightCategory(btn);
-    });
-    categoryBar.appendChild(btn);
-  });
+  rowKeys = Object.keys(rows);
 }
 
-function filterByGroup(group) {
-  filtered = group ? channels.filter(ch => ch.group === group) : [...channels];
-  selectedIndex = 0;
-  renderList();
-}
+function renderRows() {
+  rowsContainer.innerHTML = "";
 
-function highlightCategory(activeBtn) {
-  document.querySelectorAll('.category-btn').forEach(btn => btn.classList.remove('active'));
-  activeBtn.classList.add('active');
-}
+  rowKeys.forEach((key, r) => {
+    const row = document.createElement("div");
+    row.className = "row";
 
-function renderList() {
-  channelListEl.innerHTML = '';
-  if (!filtered.length) {
-    const li = document.createElement('li');
-    li.textContent = 'No channels';
-    channelListEl.appendChild(li);
-    return;
-  }
+    const title = document.createElement("div");
+    title.className = "row-title";
+    title.textContent = key;
 
-  filtered.forEach((ch, idx) => {
-    const li = document.createElement('li');
-    if (idx === selectedIndex) li.classList.add('active');
+    const items = document.createElement("div");
+    items.className = "row-items";
 
-    // Set tooltip for channel name (useful for remote users)
-    li.title = ch.name;
+    rows[key].forEach((ch, c) => {
+      const card = document.createElement("div");
+      card.className = "card";
+      card.dataset.r = r;
+      card.dataset.c = c;
 
-    const icon = document.createElement('img');
-    icon.className = 'channel-icon';
-    icon.src = ch.logo || ''; // empty src will show broken image, but we'll handle with CSS maybe
-    icon.alt = ch.name;
-    icon.loading = 'lazy';
-    // If no logo, we could show a placeholder, but let's keep it simple: a blank gray box
-    icon.onerror = () => { icon.src = ''; }; // hide broken icon
+      const img = document.createElement("img");
+      img.src = ch.logo || "";
+      img.onerror = () => img.remove();
 
-    li.appendChild(icon);
-
-    li.addEventListener('click', () => {
-      selectedIndex = idx;
-      renderList();
-      playSelected();
+      card.appendChild(img);
+      items.appendChild(card);
     });
 
-    li.addEventListener('dblclick', () => {
-      toggleFullscreen();
-    });
-
-    channelListEl.appendChild(li);
+    row.appendChild(title);
+    row.appendChild(items);
+    rowsContainer.appendChild(row);
   });
-
-  const active = channelListEl.querySelector('li.active');
-  if (active) active.scrollIntoView({ block: 'nearest' });
 }
 
-function toggleFullscreen() {
-  if (!document.fullscreenElement) {
-    video.requestFullscreen().catch(err => console.warn('Fullscreen failed:', err));
-  } else {
-    document.exitFullscreen();
-  }
-}
+function updateFocus() {
+  document.querySelectorAll(".card").forEach(el => el.classList.remove("active"));
+  searchIcon.classList.remove("active");
 
-function applySearch() {
-  const q = searchInput.value.trim().toLowerCase();
-  filtered = !q
-    ? [...channels]
-    : channels.filter(c => c.name.toLowerCase().includes(q) || c.group.toLowerCase().includes(q));
-  if (selectedIndex >= filtered.length) selectedIndex = Math.max(0, filtered.length - 1);
-  renderList();
-}
+  if (focusArea === "rows") {
+    const el = document.querySelector(`[data-r="${focus.row}"][data-c="${focus.col}"]`);
+    if (el) {
+      el.classList.add("active");
+      el.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
 
-function githubRawToJsdelivr(url) {
-  try {
-    const u = new URL(url);
-    if (u.hostname !== 'raw.githubusercontent.com') return null;
-    const parts = u.pathname.split('/').filter(Boolean);
-    if (parts.length < 4) return null;
-    const owner = parts[0];
-    const repo = parts[1];
-    const branch = parts[2];
-    const filePath = parts.slice(3).join('/');
-    return `https://cdn.jsdelivr.net/gh/${owner}/${repo}@${branch}/${filePath}`;
-  } catch (_) {
-    return null;
-  }
-}
-
-async function fetchTextWithTimeout(url, timeoutMs = 15000) {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, { signal: ctrl.signal, cache: 'no-store' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.text();
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function loadPlaylist() {
-  setStatus('Loading playlist...');
-  try {
-    let text;
-    let usedUrl = PLAYLIST_URL;
-
-    try {
-      text = await fetchTextWithTimeout(PLAYLIST_URL, 15000);
-    } catch (primaryErr) {
-      const mirrorUrl = githubRawToJsdelivr(PLAYLIST_URL);
-      if (!mirrorUrl) throw primaryErr;
-      setStatus('Primary URL failed, trying mirror...');
-      text = await fetchTextWithTimeout(mirrorUrl, 15000);
-      usedUrl = mirrorUrl;
+      const ch = rows[rowKeys[focus.row]][focus.col];
+      preview(ch);
     }
+  }
 
-    channels = parseM3U(text);
-    filtered = [...channels];
-    selectedIndex = 0;
-    renderList();
-    updateCategoryBar(channels);
-
-    setStatus(`Loaded ${channels.length} channels`);
-  } catch (err) {
-    console.error(err);
-    if (err?.name === 'AbortError') {
-      setStatus('Load failed: timeout (network/TLS blocked?)');
-      return;
-    }
-    setStatus(`Load failed: ${err.message || 'unknown error'}`);
+  if (focusArea === "search") {
+    searchIcon.classList.add("active");
   }
 }
 
-function playSelected() {
-  if (!filtered.length) return;
-  const ch = filtered[selectedIndex];
+function preview(ch) {
   if (!ch) return;
 
+  video.muted = true;
+
+  if (window.Hls && ch.url.includes(".m3u8")) {
+    const hls = new Hls();
+    hls.loadSource(ch.url);
+    hls.attachMedia(video);
+  } else {
+    video.src = ch.url;
+  }
+
+  video.play().catch(() => {});
+}
+
+function play() {
+  const ch = rows[rowKeys[focus.row]][focus.col];
+  if (!ch) return;
+
+  video.muted = false;
   nowPlayingEl.textContent = ch.name;
-  setStatus('Buffering...');
+  statusTextEl.textContent = "Playing";
 
-  try {
-    if (hls) {
-      hls.destroy();
-      hls = null;
-    }
-
-    const url = ch.url;
-    const isHls = /\.m3u8($|\?)/i.test(url) || url.toLowerCase().includes('m3u8');
-
-    if (isHls) {
-      if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        video.src = url;
-        video.play().catch(() => {});
-        return;
-      }
-      if (window.Hls && window.Hls.isSupported()) {
-        hls = new window.Hls({ enableWorker: true });
-        hls.loadSource(url);
-        hls.attachMedia(video);
-        hls.on(window.Hls.Events.MANIFEST_PARSED, () => {
-          video.play().catch(() => {});
-        });
-        hls.on(window.Hls.Events.ERROR, (_, data) => {
-          if (data?.fatal) {
-            setStatus(`HLS fatal: ${data.type || 'unknown'}`);
-          }
-        });
-        return;
-      }
-      setStatus('HLS not supported on this runtime');
-      return;
-    }
-
-    video.src = url;
-    video.play().catch(() => {});
-  } catch (err) {
-    setStatus(`Play error: ${err.message}`);
+  if (window.Hls && ch.url.includes(".m3u8")) {
+    const hls = new Hls();
+    hls.loadSource(ch.url);
+    hls.attachMedia(video);
+    hls.on(Hls.Events.MANIFEST_PARSED, () => video.play());
+  } else {
+    video.src = ch.url;
+    video.play();
   }
 }
 
-function moveSelection(delta) {
-  if (!filtered.length) return;
-  selectedIndex += delta;
-  if (selectedIndex < 0) selectedIndex = 0;
-  if (selectedIndex >= filtered.length) selectedIndex = filtered.length - 1;
-  renderList();
-}
+/* 🔍 SEARCH */
+searchIcon.onclick = () => {
+  focusArea = "overlay";
+  searchOverlay.classList.remove("hidden");
+  searchInput.focus();
+};
 
-video.addEventListener('playing', () => setStatus('Playing'));
-video.addEventListener('pause', () => setStatus('Paused'));
-video.addEventListener('waiting', () => setStatus('Buffering...'));
-video.addEventListener('error', () => setStatus('Playback error'));
+searchInput.oninput = () => {
+  const q = searchInput.value.toLowerCase();
+  const results = channels.filter(c => c.name.toLowerCase().includes(q));
 
-searchInput.addEventListener('input', applySearch);
+  searchResults.innerHTML = results.map(c => `
+    <div class="card">
+      <img src="${c.logo || ''}">
+    </div>
+  `).join('');
+};
 
-// Tizen key registration
-(function registerKeys() {
-  try {
-    if (window.tizen && tizen.tvinputdevice) {
-      [
-        'MediaPlay',
-        'MediaPause',
-        'MediaPlayPause',
-        'MediaStop',
-        'MediaFastForward',
-        'MediaRewind',
-        'ColorF1Green',
-        'ColorF2Yellow',
-        'ColorF3Blue',
-      ].forEach(k => {
-        try { tizen.tvinputdevice.registerKey(k); } catch (_) {}
-      });
+/* 🎮 REMOTE */
+window.addEventListener("keydown", e => {
+
+  if (focusArea === "overlay") {
+    if (e.key === "Backspace" || e.key === "Escape") {
+      searchOverlay.classList.add("hidden");
+      focusArea = "rows";
+      updateFocus();
     }
-  } catch (_) {}
-})();
+    return;
+  }
 
-window.addEventListener('keydown', (e) => {
-  const key = e.key;
-  const code = e.keyCode;
+  if (e.key === "ArrowUp" && focus.row === 0) {
+    focusArea = "search";
+    updateFocus();
+    return;
+  }
 
-  if (key === 'ArrowUp') {
-    if (focusArea === 'list') moveSelection(-1);
-    e.preventDefault();
-    return;
-  }
-  if (key === 'ArrowDown') {
-    if (focusArea === 'list') moveSelection(1);
-    e.preventDefault();
-    return;
-  }
-  if (key === 'ArrowLeft') {
-    focusArea = 'list';
-    e.preventDefault();
-    return;
-  }
-  if (key === 'ArrowRight') {
-    focusArea = 'player';
-    e.preventDefault();
-    return;
-  }
-  if (key === 'Enter') {
-    if (focusArea === 'list') {
-      playSelected();
-    } else if (focusArea === 'player') {
-      toggleFullscreen();
+  if (focusArea === "search") {
+    if (e.key === "Enter") {
+      searchOverlay.classList.remove("hidden");
+      focusArea = "overlay";
+      searchInput.focus();
     }
-    e.preventDefault();
+    if (e.key === "ArrowDown") {
+      focusArea = "rows";
+      updateFocus();
+    }
     return;
   }
 
-  if (key === 'MediaPlayPause' || code === 10252) {
-    if (video.paused) video.play().catch(() => {});
-    else video.pause();
-    e.preventDefault();
-    return;
-  }
-  if (key === 'MediaPlay' || code === 415) {
-    video.play().catch(() => {});
-    e.preventDefault();
-    return;
-  }
-  if (key === 'MediaPause' || code === 19) {
-    video.pause();
-    e.preventDefault();
-    return;
-  }
-  if (key === 'MediaStop' || code === 413) {
-    video.pause();
-    video.removeAttribute('src');
-    video.load();
-    setStatus('Stopped');
-    e.preventDefault();
-    return;
+  switch (e.key) {
+    case "ArrowRight": focus.col++; break;
+    case "ArrowLeft": focus.col--; break;
+    case "ArrowDown": focus.row++; focus.col = 0; break;
+    case "ArrowUp": focus.row--; focus.col = 0; break;
+    case "Enter": play(); break;
   }
 
-  if (key === 'ColorF1Green' || code === 404) {
-    loadPlaylist();
-    e.preventDefault();
-    return;
-  }
+  focus.row = Math.max(0, Math.min(focus.row, rowKeys.length - 1));
+  const maxCol = rows[rowKeys[focus.row]].length - 1;
+  focus.col = Math.max(0, Math.min(focus.col, maxCol));
+
+  updateFocus();
 });
 
-loadPlaylist();
+init();
