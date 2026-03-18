@@ -19,6 +19,7 @@ function setStatus(text) {
   statusTextEl.textContent = text;
 }
 
+// ========== NEW: Parse M3U with logo extraction ==========
 function parseM3U(text) {
   const lines = text.split(/\r?\n/);
   const out = [];
@@ -29,12 +30,13 @@ function parseM3U(text) {
     if (!line) continue;
 
     if (line.startsWith('#EXTINF')) {
-      // Example: #EXTINF:-1 tvg-name="ABC" group-title="News",ABC Channel
       const namePart = line.includes(',') ? line.split(',').slice(1).join(',').trim() : 'Unknown';
       const groupMatch = line.match(/group-title="([^"]+)"/i);
+      const logoMatch = line.match(/tvg-logo="([^"]+)"/i);   // <-- extract logo
       currentMeta = {
         name: namePart || 'Unknown',
         group: groupMatch ? groupMatch[1] : 'Other',
+        logo: logoMatch ? logoMatch[1] : null,
       };
       continue;
     }
@@ -43,16 +45,67 @@ function parseM3U(text) {
       const item = {
         name: currentMeta?.name || line,
         group: currentMeta?.group || 'Other',
+        logo: currentMeta?.logo || null,
         url: line,
       };
       out.push(item);
       currentMeta = null;
     }
   }
-
   return out;
 }
 
+// ========== NEW: Category bar creation ==========
+function createCategoryBar(allChannels) {
+  const groups = [...new Set(allChannels.map(ch => ch.group))].sort();
+
+  let categoryBar = document.getElementById('categoryBar');
+  if (!categoryBar) {
+    categoryBar = document.createElement('div');
+    categoryBar.id = 'categoryBar';
+    categoryBar.className = 'category-bar';
+    // Insert after search input
+    searchInput.parentNode.insertBefore(categoryBar, searchInput.nextSibling);
+  }
+  categoryBar.innerHTML = '';
+
+  // "All" button
+  const allBtn = document.createElement('button');
+  allBtn.textContent = 'All';
+  allBtn.classList.add('category-btn', 'active');
+  allBtn.dataset.group = '';
+  allBtn.addEventListener('click', () => {
+    filterByGroup('');
+    highlightCategory(allBtn);
+  });
+  categoryBar.appendChild(allBtn);
+
+  // Category buttons
+  groups.forEach(group => {
+    const btn = document.createElement('button');
+    btn.textContent = group;
+    btn.classList.add('category-btn');
+    btn.dataset.group = group;
+    btn.addEventListener('click', () => {
+      filterByGroup(group);
+      highlightCategory(btn);
+    });
+    categoryBar.appendChild(btn);
+  });
+}
+
+function filterByGroup(group) {
+  filtered = group ? channels.filter(ch => ch.group === group) : [...channels];
+  selectedIndex = 0;
+  renderList();
+}
+
+function highlightCategory(activeBtn) {
+  document.querySelectorAll('.category-btn').forEach(btn => btn.classList.remove('active'));
+  activeBtn.classList.add('active');
+}
+
+// ========== Updated renderList with icons ==========
 function renderList() {
   channelListEl.innerHTML = '';
   if (!filtered.length) {
@@ -65,7 +118,18 @@ function renderList() {
   filtered.forEach((ch, idx) => {
     const li = document.createElement('li');
     if (idx === selectedIndex) li.classList.add('active');
-    li.innerHTML = `<div>${ch.name}</div><div class="meta">${ch.group}</div>`;
+
+    const iconHtml = ch.logo ? `<img class="channel-icon" src="${ch.logo}" alt="" loading="lazy">` : '';
+    li.innerHTML = `
+      <div class="channel-item">
+        ${iconHtml}
+        <div class="channel-info">
+          <div>${ch.name}</div>
+          <div class="meta">${ch.group}</div>
+        </div>
+      </div>
+    `;
+
     li.onclick = () => {
       selectedIndex = idx;
       renderList();
@@ -83,7 +147,6 @@ function applySearch() {
   filtered = !q
     ? [...channels]
     : channels.filter(c => c.name.toLowerCase().includes(q) || c.group.toLowerCase().includes(q));
-
   if (selectedIndex >= filtered.length) selectedIndex = Math.max(0, filtered.length - 1);
   renderList();
 }
@@ -133,7 +196,6 @@ async function loadPlaylist() {
     } catch (primaryErr) {
       const mirrorUrl = githubRawToJsdelivr(url);
       if (!mirrorUrl) throw primaryErr;
-
       setStatus('Primary URL failed, trying mirror...');
       text = await fetchTextWithTimeout(mirrorUrl, 15000);
       usedUrl = mirrorUrl;
@@ -143,6 +205,7 @@ async function loadPlaylist() {
     filtered = [...channels];
     selectedIndex = 0;
     renderList();
+    createCategoryBar(channels);   // <-- new
 
     localStorage.setItem('misoIptv:lastPlaylist', usedUrl);
     setStatus(`Loaded ${channels.length} channels`);
@@ -174,14 +237,11 @@ function playSelected() {
     const isHls = /\.m3u8($|\?)/i.test(url) || url.toLowerCase().includes('m3u8');
 
     if (isHls) {
-      // Native HLS support (Safari / some TV runtimes)
       if (video.canPlayType('application/vnd.apple.mpegurl')) {
         video.src = url;
         video.play().catch(() => {});
         return;
       }
-
-      // hls.js fallback (most desktop browsers)
       if (window.Hls && window.Hls.isSupported()) {
         hls = new window.Hls({ enableWorker: true });
         hls.loadSource(url);
@@ -196,12 +256,10 @@ function playSelected() {
         });
         return;
       }
-
       setStatus('HLS not supported on this runtime');
       return;
     }
 
-    // Non-HLS direct playback
     video.src = url;
     video.play().catch(() => {});
   } catch (err) {
@@ -225,7 +283,7 @@ video.addEventListener('error', () => setStatus('Playback error'));
 loadBtn.addEventListener('click', loadPlaylist);
 searchInput.addEventListener('input', applySearch);
 
-// Tizen key registration (best effort)
+// Tizen key registration
 (function registerKeys() {
   try {
     if (window.tizen && tizen.tvinputdevice) {
@@ -251,7 +309,6 @@ window.addEventListener('keydown', (e) => {
   const key = e.key;
   const code = e.keyCode;
 
-  // arrows + enter
   if (key === 'ArrowUp') {
     if (focusArea === 'list') moveSelection(-1);
     e.preventDefault();
@@ -278,8 +335,7 @@ window.addEventListener('keydown', (e) => {
     return;
   }
 
-  // media keys
-  // Play/Pause codes vary by device, so check both key and keyCode
+  // Media keys
   if (key === 'MediaPlayPause' || code === 10252) {
     if (video.paused) video.play().catch(() => {});
     else video.pause();
