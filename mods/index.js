@@ -42,8 +42,8 @@
     function attachKeys() {
         document.addEventListener('keydown', (e) => {
             const key = e.keyCode;
-            const UP=38, DOWN=40, LEFT=37, RIGHT=39, ENTER=13, BACK=10009;
-            if ([UP,DOWN,LEFT,RIGHT,ENTER,BACK].includes(key)) e.preventDefault();
+            const UP=38, DOWN=40, LEFT=37, RIGHT=39, ENTER=13, BACK=10009, RED=403;
+            if ([UP,DOWN,LEFT,RIGHT,ENTER,BACK,RED].includes(key)) e.preventDefault();
 
             switch(key) {
                 case UP: move('up'); break;
@@ -52,6 +52,7 @@
                 case RIGHT: move('right'); break;
                 case ENTER: activate(); break;
                 case BACK: goBack(); break;
+                case RED: window.dispatchEvent(new CustomEvent('tv-red')); break;
             }
         });
     }
