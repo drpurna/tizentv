@@ -1,5 +1,5 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <title>Tizen TV</title>
@@ -7,21 +7,28 @@
 </head>
 <body>
 
+<!-- PLAYER (AVPlay Fullscreen) -->
 <div id="player"></div>
 
-<!-- HEADER -->
+<!-- HEADER (YouTube style) -->
 <div id="header">
   <div class="logo">Tizen TV</div>
 
   <div class="actions">
-    <div class="icon" id="searchBtn">🔍</div>
-    <div class="icon" id="addBtn">➕</div>
+    <div class="icon" id="searchBtn" title="Search Playlist">🔍</div>
+    <div class="icon" id="addBtn" title="Add Custom Playlist">➕</div>
   </div>
 </div>
 
+<!-- UI overlay -->
 <div id="ui">
   <div id="overlay"></div>
   <div id="rows"></div>
+</div>
+
+<!-- OPTIONAL: FOOTER HELP -->
+<div class="footer">
+  Use Remote: ↑↓ navigate rows, ←→ select channel, Enter play, Return exit fullscreen.
 </div>
 
 <script src="app.js"></script>
