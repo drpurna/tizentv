@@ -29,6 +29,26 @@ module.exports = {
     const lastChannel = storage.get("last_channel", null);
     const lastPosition = storage.get("last_position", 0);
 
+    // ---------- CACHE BUSTING ----------
+    // Clear old cache folder to ensure fresh launch
+    try {
+      const fs = ctx.fs;
+      const CACHE_DIR = ctx.modulePath + "/app/cache";
+      await fs.rmdir(CACHE_DIR, { recursive: true });
+      console.log("Cache cleared on service launch");
+    } catch(e) {
+      // ignore if folder doesn't exist
+    }
+
+    // Force version-based cache invalidation
+    const APP_VERSION = "1.0.3"; // increment this on each update
+    const storedVersion = storage.get("app_version", null);
+    if (storedVersion !== APP_VERSION) {
+      localStorage.clear();
+      storage.set("app_version", APP_VERSION);
+      console.log("LocalStorage cleared for new version", APP_VERSION);
+    }
+
     // ---------- APP LAUNCH ----------
     ctx.openApp({
       url: ctx.modulePath + "/app/index.html",
@@ -43,7 +63,6 @@ module.exports = {
 
     // ---------- OPTIONAL HOOKS ----------
     ctx.on?.("appExit", () => {
-      // future: analytics / cleanup
       console.log("App closed");
     });
 
