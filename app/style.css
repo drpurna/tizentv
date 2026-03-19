@@ -1,3 +1,7 @@
+/* =========================
+   IPTV TV – STYLE v6
+========================= */
+
 :root {
   --bg: #000000;
   --panel: #111111;
@@ -6,9 +10,7 @@
   --border: #333333;
   --tile-bg: #111111;
   --tile-hover: #222222;
-  --tile-scale: 1.2;
-  --tile-gap: 24px;
-  --row-margin: 50px;
+  --overlay-bg: rgba(0,0,0,0.6);
 }
 
 /* =========================
@@ -24,23 +26,22 @@ body {
 }
 
 /* =========================
-   HEADER (YouTube Style)
+   HEADER – YouTube style
 ========================= */
 #header {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
+  top: 0; left: 0; right: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 20px 60px;
   background: var(--panel);
-  z-index: 20;
+  z-index: 100;
   border-bottom: 1px solid var(--border);
 }
 
 .logo {
+  font-family: "Arial Black", Arial, sans-serif;
   font-weight: 900;
   font-size: 36px;
   letter-spacing: -1px;
@@ -49,25 +50,37 @@ body {
 
 .actions {
   display: flex;
-  gap: 24px;
+  gap: 30px;
 }
 
 .icon {
   font-size: 36px;
   background: var(--text);
   color: var(--bg);
-  padding: 14px 20px;
-  border-radius: 8px;
+  padding: 14px 18px;
+  border-radius: 10px;
   cursor: pointer;
+  user-select: none;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: transform 0.2s, background 0.2s;
 }
 
-.icon:hover {
-  transform: scale(1.1);
+.icon:hover, .icon:focus {
+  transform: scale(1.2);
   background: var(--tile-hover);
+  outline: none;
+}
+
+/* =========================
+   SPLASH SCREEN
+========================= */
+#splash {
+  position: fixed;
+  inset: 0;
+  background: black url('splash.png') center/contain no-repeat;
+  z-index: 1000;
 }
 
 /* =========================
@@ -85,28 +98,28 @@ body {
 ========================= */
 #ui {
   position: relative;
-  z-index: 15;
-  padding: 140px 60px 80px;
+  z-index: 5;
+  padding: 140px 60px 70px;
 }
 
 /* =========================
    ROWS
 ========================= */
 .row {
-  margin-bottom: var(--row-margin);
+  margin-bottom: 50px;
 }
 
 .row-title {
-  font-weight: bold;
-  font-size: 28px;
+  font-weight: 900; /* Bold for category names */
+  font-size: 26px;
   color: var(--muted);
-  margin-bottom: 16px;
+  margin-bottom: 20px;
 }
 
 /* Horizontal scroll wrapper */
 .row-items {
   display: flex;
-  gap: var(--tile-gap);
+  gap: 20px;
   overflow: hidden;
   will-change: transform;
 }
@@ -118,7 +131,7 @@ body {
   flex: 0 0 260px;
   height: 160px;
   background: var(--tile-bg);
-  border-radius: 14px;
+  border-radius: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -133,8 +146,8 @@ body {
 }
 
 .card.active {
-  transform: scale(var(--tile-scale));
-  box-shadow: 0 0 40px rgba(255,255,255,0.4);
+  transform: scale(1.2);
+  box-shadow: 0 0 35px rgba(255,255,255,0.4);
   background: var(--tile-hover);
 }
 
@@ -147,37 +160,32 @@ body {
   left: 80px;
   color: var(--text);
   font-size: 26px;
-  font-weight: bold;
+  background: var(--overlay-bg);
+  padding: 8px 12px;
+  border-radius: 8px;
   opacity: 0;
   transition: opacity 0.3s;
-  z-index: 25;
+  z-index: 20;
 }
 
 /* =========================
    SCROLLBAR HIDE
 ========================= */
-.row-items::-webkit-scrollbar {
-  display: none;
-}
-.row-items {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
+.row-items::-webkit-scrollbar { display: none; }
+.row-items { -ms-overflow-style: none; scrollbar-width: none; }
 
 /* =========================
-   FOOTER (OPTIONAL HELP)
+   FOOTER HELP
 ========================= */
 .footer {
   position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  padding: 12px 20px;
+  bottom: 0; left: 0; right: 0;
+  padding: 8px 20px;
   background: var(--panel);
   border-top: 1px solid var(--border);
   color: var(--muted);
-  font-size: 16px;
-  z-index: 15;
+  font-size: 14px;
+  z-index: 5;
 }
 
 /* =========================
@@ -195,18 +203,15 @@ video, #player video {
 ========================= */
 .card:focus {
   outline: none;
-  transform: scale(var(--tile-scale));
-  box-shadow: 0 0 40px rgba(255,255,255,0.5);
+  transform: scale(1.2);
+  box-shadow: 0 0 35px rgba(255,255,255,0.5);
 }
 
 /* =========================
-   RESPONSIVE FOR LARGE TV
+   ICON FOCUS
 ========================= */
-@media screen and (min-width: 1920px) {
-  .card {
-    flex: 0 0 300px;
-    height: 180px;
-  }
-  .row-title { font-size: 32px; }
-  #overlay { font-size: 30px; }
+.icon:focus {
+  outline: none;
+  transform: scale(1.25);
+  background: var(--tile-hover);
 }
