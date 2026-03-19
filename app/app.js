@@ -1,5 +1,6 @@
 /* =========================
-   IPTV ENGINE v6 – FULL UPGRADED + VIDEO FALLBACK
+   IPTV ENGINE v6 – FINAL UPGRADED
+   AVPlay + hls.js fallback + full-screen toggle + pre-buffer + virtual scroll
 ========================= */
 
 const App = (() => {
@@ -12,8 +13,9 @@ const App = (() => {
     focusCol: 0,
     currentIndex: 0,
     rowScroll: {},
-    player: null,
-    fallbackVideo: null,
+    player: null,           // AVPlay on Tizen
+    fallbackVideo: null,    // Browser fallback
+    hlsInstance: null,      // hls.js instance
     isFullscreen: false,
     prebufferIndex: null,
     dom: {
@@ -27,10 +29,7 @@ const App = (() => {
     },
     storage: {
       get(key, fallback = null) {
-        try {
-          const v = localStorage.getItem(key);
-          return v ? JSON.parse(v) : fallback;
-        } catch { return fallback; }
+        try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; }
       },
       set(key, value) {
         try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
@@ -44,12 +43,14 @@ const App = (() => {
     VISIBLE_TILES: 6
   };
 
+  /* ========================= INIT ========================= */
   async function init() {
     showSplash();
 
     // Initialize AVPlay if available
     try { S.player = webapis.avplay; } catch(e){ console.warn("AVPlay not available", e); }
 
+    // Fetch playlist
     const text = await fetch(CONFIG.PLAYLIST).then(r => r.text());
     S.channels = parse(text);
     buildRows();
@@ -58,6 +59,7 @@ const App = (() => {
     hideSplash();
   }
 
+  /* ========================= SPLASH ========================= */
   function showSplash() {
     const splash = document.createElement("div");
     splash.id = "splash";
@@ -73,6 +75,7 @@ const App = (() => {
     if(splash) splash.remove();
   }
 
+  /* ========================= PLAYLIST PARSE ========================= */
   function parse(text) {
     const lines = text.split("\n");
     let res = [], meta = {};
@@ -91,6 +94,7 @@ const App = (() => {
     return res;
   }
 
+  /* ========================= BUILD ROWS ========================= */
   function buildRows() {
     const map = {};
     S.channels.forEach(ch => {
@@ -102,6 +106,7 @@ const App = (() => {
     S.flat = S.channels;
   }
 
+  /* ========================= RENDER ROWS ========================= */
   function renderRows() {
     const frag = document.createDocumentFragment();
     S.rows.forEach((row, r) => {
@@ -138,28 +143,24 @@ const App = (() => {
     S.dom.rows.appendChild(frag);
   }
 
+  /* ========================= FOCUS ========================= */
   function setFocus() {
     document.querySelectorAll(".card.active").forEach(e=>e.classList.remove("active"));
-
     const rowEl = S.dom.rows.children[S.focusRow];
     if(!rowEl) return;
     const items = rowEl.children[1];
     const el = items.children[S.focusCol];
     if(el) el.classList.add("active");
-
     scrollRow(items);
     updateOverlay();
   }
 
   function scrollRow(items) {
     if (!S.rowScroll[S.focusRow]) S.rowScroll[S.focusRow] = 0;
-
     let scroll = S.rowScroll[S.focusRow];
     const visible = CONFIG.VISIBLE_TILES;
-
     if(S.focusCol >= scroll + visible) scroll = S.focusCol - visible + 1;
     if(S.focusCol < scroll) scroll = S.focusCol;
-
     S.rowScroll[S.focusRow] = scroll;
     const offset = scroll * 280;
     items.style.transform = `translateX(${-offset}px)`;
@@ -167,7 +168,7 @@ const App = (() => {
 
   function updateOverlay() {
     const ch = S.rows[S.focusRow].items[S.focusCol];
-    if(ch) {
+    if(ch){
       S.dom.overlay.textContent = ch.name;
       S.dom.overlay.style.opacity = 1;
       setTimeout(()=>S.dom.overlay.style.opacity=0, 1500);
@@ -175,10 +176,10 @@ const App = (() => {
   }
 
   function getFlatIndex(r,c) {
-    const row = S.rows[r];
-    return S.flat.indexOf(row.items[c]);
+    return S.flat.indexOf(S.rows[r].items[c]);
   }
 
+  /* ========================= FULLSCREEN TOGGLE ========================= */
   function toggleFullScreen() {
     S.isFullscreen = !S.isFullscreen;
     S.dom.ui.style.display = S.isFullscreen ? "none" : "block";
@@ -189,26 +190,34 @@ const App = (() => {
     }
   }
 
+  /* ========================= PLAY CHANNEL ========================= */
   function play(index) {
     const ch = S.flat[index];
     if(!ch) return;
-
     S.currentIndex = index;
     S.isFullscreen = true;
     S.dom.ui.style.display = "none";
 
-    // Use AVPlay if available
+    // AVPlay on Tizen
     if(S.player){
       try { S.player.stop(); S.player.close(); } catch(e){}
       try {
         S.player.open(ch.url);
         S.player.setDisplayRect(0,0,1920,1080);
         S.player.setStreamingProperty("BUFFERING_TIME", CONFIG.BUFFER);
+        S.player.setListener({
+          onbufferingstart: ()=>{},
+          onbufferingcomplete: ()=>{},
+          oncurrentplaytime: ()=>{},
+          onevent: ()=>{},
+          onerror: (e)=>console.error("AVPlay error:", e)
+        });
         S.player.prepareAsync(()=>S.player.play(), err=>console.error(err));
         prebufferNext(index);
       } catch(e){ console.error("AVPlay play error",e);}
-    } else {
-      // Fallback for browser
+    } 
+    // Browser fallback with HLS
+    else {
       if(!S.fallbackVideo){
         S.fallbackVideo = document.createElement("video");
         S.fallbackVideo.autoplay = true;
@@ -219,23 +228,36 @@ const App = (() => {
         S.fallbackVideo.style.background = "black";
         S.dom.player.appendChild(S.fallbackVideo);
       }
-      S.fallbackVideo.src = ch.url;
-      S.fallbackVideo.play().catch(e => console.warn("Fallback video play error:", e));
+      if(S.hlsInstance) { S.hlsInstance.destroy(); S.hlsInstance = null; }
+
+      if(Hls.isSupported()){
+        S.hlsInstance = new Hls();
+        S.hlsInstance.loadSource(ch.url);
+        S.hlsInstance.attachMedia(S.fallbackVideo);
+        S.hlsInstance.on(Hls.Events.MANIFEST_PARSED, ()=>S.fallbackVideo.play());
+      } else {
+        S.fallbackVideo.src = ch.url;
+        S.fallbackVideo.play().catch(e=>console.warn("Fallback video play error:", e));
+      }
     }
   }
 
   function stopPlayer() {
     if(S.player) try { S.player.stop(); S.player.close(); } catch(e){}
-    if(S.fallbackVideo) S.fallbackVideo.pause();
+    if(S.fallbackVideo){
+      S.fallbackVideo.pause();
+      if(S.hlsInstance){ S.hlsInstance.destroy(); S.hlsInstance=null; }
+    }
     S.isFullscreen = false;
     S.dom.ui.style.display = "block";
   }
 
+  /* ========================= PREBUFFER NEXT ========================= */
   function prebufferNext(index){
+    if(!S.player) return;
     const nextIndex = (index+1) % S.flat.length;
     const nextCh = S.flat[nextIndex];
-    if(!nextCh || !S.player) return;
-
+    if(!nextCh) return;
     try {
       if(S.prebufferIndex!==nextIndex){
         const pb = webapis.avplay;
@@ -247,6 +269,7 @@ const App = (() => {
     } catch{}
   }
 
+  /* ========================= ZAPPING ========================= */
   function zap(dir){
     let i = S.currentIndex + dir;
     if(i <0) i=S.flat.length-1;
@@ -254,6 +277,7 @@ const App = (() => {
     play(i);
   }
 
+  /* ========================= REMOTE KEYS ========================= */
   function onKey(e){
     if(S.isFullscreen){
       switch(e.key){
