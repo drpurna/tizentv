@@ -1,383 +1,239 @@
 /* =========================
-   IPTV ENGINE v6 – BUG FIXES ONLY (UI unchanged)
+   IPTV ENGINE – STABLE CORE
 ========================= */
 
 const App = (() => {
 
-  /* =========================
-     STATE
-  ========================== */
   const S = {
-    channels: [],
     rows: [],
     flat: [],
     focusRow: 0,
     focusCol: 0,
-    currentIndex: 0,
-    rowScroll: {},
     player: null,
-    isFullscreen: false,
-    prebufferIndex: null,
-    overlayTimeout: null,
-    videoElement: null,          // will hold the dynamically created video
-    dom: {
-      rows: document.getElementById("rows"),
-      overlay: document.getElementById("overlay"),
-      player: document.getElementById("player"),
-      ui: document.getElementById("ui"),
-      header: document.getElementById("header"),
-      searchBtn: document.getElementById("searchBtn"),
-      addBtn: document.getElementById("addBtn")
-    },
-    storage: {
-      get(key, fallback = null) {
-        try {
-          const v = localStorage.getItem(key);
-          return v ? JSON.parse(v) : fallback;
-        } catch { return fallback; }
-      },
-      set(key, value) {
-        try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
-      }
-    }
+    isPlaying: false,
+    rowOffset: {}
   };
 
-  /* =========================
-     CONFIG
-  ========================== */
-  const CONFIG = {
-    PLAYLIST: S.storage.get("custom_playlist") || "https://iptv-org.github.io/iptv/languages/tel.m3u",
-    BUFFER: "200",
-    VISIBLE_TILES: 6
+  const DOM = {
+    rows: document.getElementById("rows"),
+    overlay: document.getElementById("overlay"),
+    ui: document.getElementById("ui")
   };
 
+  const PLAYLIST = "https://iptv-org.github.io/iptv/languages/tel.m3u";
+
   /* =========================
-     INIT – splash always hides
+     INIT
   ========================== */
   async function init() {
-    showSplash();
-
-    // Dynamically create video element inside #player (so index.html stays unchanged)
-    S.videoElement = document.createElement('video');
-    S.videoElement.id = 'av-player';
-    S.videoElement.style.width = '100%';
-    S.videoElement.style.height = '100%';
-    S.videoElement.style.backgroundColor = 'black';
-    S.dom.player.appendChild(S.videoElement);
-
     try {
-      // Get AVPlay (may fail on emulator, but we'll log)
-      try { S.player = webapis.avplay; } catch(e){ console.warn("AVPlay not available", e); }
-
-      const text = await fetch(CONFIG.PLAYLIST).then(r => r.text());
-      S.channels = parse(text);
-      buildRows();
-      renderRows();
-      setFocus();
-    } catch (error) {
-      console.error("Init error:", error);
-      S.dom.overlay.textContent = "Failed to load playlist";
-      S.dom.overlay.style.opacity = 1;
-    } finally {
-      hideSplash(); // Always hide splash, even on error
+      S.player = webapis.avplay;
+    } catch (e) {
+      console.error("AVPlay not available", e);
     }
 
-    S.dom.searchBtn.addEventListener("click", searchPrompt);
-    S.dom.addBtn.addEventListener("click", loadPlaylistPrompt);
+    const txt = await fetch(PLAYLIST).then(r => r.text());
+    const channels = parse(txt);
+
+    buildRows(channels);
+    render();
+    setFocus();
+
+    document.addEventListener("keydown", onKey);
   }
 
   /* =========================
-     SPLASH SCREEN
-  ========================== */
-  function showSplash() {
-    const splash = document.createElement("div");
-    splash.id = "splash";
-    splash.textContent = "Tizen TV";
-    document.body.appendChild(splash);
-  }
-
-  function hideSplash() {
-    const splash = document.getElementById("splash");
-    if(splash) splash.remove();
-  }
-
-  /* =========================
-     PARSE PLAYLIST (unchanged)
+     PARSE
   ========================== */
   function parse(text) {
     const lines = text.split("\n");
     let res = [], meta = {};
+
     for (let l of lines) {
       l = l.trim();
+
       if (l.startsWith("#EXTINF")) {
         meta.name = l.split(",").pop();
         const g = l.match(/group-title="([^"]+)"/);
-        const logo = l.match(/tvg-logo="([^"]+)"/);
         meta.group = g ? g[1] : "Other";
-        meta.logo = logo ? logo[1] : "";
-      } else if (l && !l.startsWith("#")) {
-        res.push({...meta, url:l});
+      }
+      else if (l && !l.startsWith("#")) {
+        res.push({ ...meta, url: l });
       }
     }
+
     return res;
   }
 
   /* =========================
-     BUILD ROWS (unchanged)
+     GROUPING
   ========================== */
-  function buildRows() {
+  function buildRows(channels) {
     const map = {};
-    S.channels.forEach(ch => {
+
+    channels.forEach(ch => {
       if (!map[ch.group]) map[ch.group] = [];
       map[ch.group].push(ch);
     });
-    const groups = Object.keys(map).sort((a,b) => a.localeCompare(b));
-    S.rows = groups.map(g => ({ title: g, items: map[g] }));
-    S.flat = S.channels;
+
+    S.rows = Object.keys(map).map(k => ({
+      title: k,
+      items: map[k]
+    }));
+
+    S.flat = channels;
   }
 
   /* =========================
-     RENDER ROWS (unchanged)
+     RENDER
   ========================== */
-  function renderRows() {
-    const frag = document.createDocumentFragment();
+  function render() {
+    DOM.rows.innerHTML = "";
+
     S.rows.forEach((row, r) => {
+
       const rowEl = div("row");
       const title = div("row-title", row.title);
       const items = div("row-items");
 
       row.items.forEach((ch, c) => {
-        const card = div("card");
-        card._r = r; card._c = c;
+        const card = div("card", ch.name);
+
+        card.dataset.r = r;
+        card.dataset.c = c;
         card.tabIndex = 0;
 
-        if(ch.logo){
-          const img = new Image();
-          img.src = ch.logo;
-          img.alt = ch.name;
-          card.appendChild(img);
-        } else card.textContent = ch.name;
-
-        card.addEventListener("click", () => play(getFlatIndex(r,c)));
         items.appendChild(card);
       });
 
       rowEl.appendChild(title);
       rowEl.appendChild(items);
-      frag.appendChild(rowEl);
+      DOM.rows.appendChild(rowEl);
     });
-
-    S.dom.rows.innerHTML = "";
-    S.dom.rows.appendChild(frag);
   }
 
   /* =========================
-     FOCUS & SCROLL – fixed edge cases
+     FOCUS + SCROLL (FIXED)
   ========================== */
   function setFocus() {
-    document.querySelectorAll(".card.active").forEach(e => e.classList.remove("active"));
 
-    const rowEl = S.dom.rows.children[S.focusRow];
-    if(!rowEl) return;
+    document.querySelectorAll(".card").forEach(e => e.classList.remove("active"));
+
+    const rowEl = DOM.rows.children[S.focusRow];
+    if (!rowEl) return;
+
     const items = rowEl.children[1];
-    const el = items.children[S.focusCol];
-    if(el) el.classList.add("active");
+    const card = items.children[S.focusCol];
 
-    scrollRow(items);
-    updateOverlay();
-  }
+    if (!card) return;
 
-  function scrollRow(items) {
-    if (!items) return;
-    const rowIndex = S.focusRow;
-    if (!S.rowScroll[rowIndex]) S.rowScroll[rowIndex] = 0;
-    let scroll = S.rowScroll[rowIndex];
-    const visible = CONFIG.VISIBLE_TILES;
-    const totalItems = items.children.length;
+    card.classList.add("active");
 
-    if (totalItems <= visible) {
-      scroll = 0;
-    } else {
-      if (S.focusCol >= scroll + visible) {
-        scroll = S.focusCol - visible + 1;
-      }
-      if (S.focusCol < scroll) {
-        scroll = S.focusCol;
-      }
-      const maxScroll = totalItems - visible;
-      if (scroll > maxScroll) scroll = maxScroll;
-    }
+    // SCROLL FIX
+    if (!S.rowOffset[S.focusRow]) S.rowOffset[S.focusRow] = 0;
 
-    S.rowScroll[rowIndex] = scroll;
-    const offset = scroll * 280; // 260px card + 20px gap
-    items.style.transition = "transform 0.3s ease";
-    items.style.transform = `translateX(-${offset}px)`;
-  }
+    let offset = S.rowOffset[S.focusRow];
 
-  function updateOverlay() {
-    const ch = S.rows[S.focusRow].items[S.focusCol];
-    if(ch) {
-      S.dom.overlay.textContent = ch.name;
-      S.dom.overlay.style.opacity = 1;
-      clearTimeout(S.overlayTimeout);
-      S.overlayTimeout = setTimeout(()=>{ S.dom.overlay.style.opacity = 0; }, 1500);
-    }
-  }
+    if (S.focusCol >= offset + 5) offset = S.focusCol - 4;
+    if (S.focusCol < offset) offset = S.focusCol;
 
-  function getFlatIndex(r,c) {
-    return S.flat.indexOf(S.rows[r].items[c]);
+    S.rowOffset[S.focusRow] = offset;
+
+    items.style.transform = `translateX(${-offset * 280}px)`;
   }
 
   /* =========================
-     PLAYER (AVPlay) – full screen fixed
+     PLAYER (FIXED AVPLAY)
   ========================== */
-  function play(index) {
-    const ch = S.flat[index];
-    if (!ch || !S.player) {
-      console.error("Cannot play: channel missing or AVPlay unavailable");
-      return;
-    }
+  function playChannel() {
 
-    S.currentIndex = index;
-    S.isFullscreen = true;
-    S.dom.ui.style.display = "none";
+    const ch = S.rows[S.focusRow].items[S.focusCol];
+    if (!ch) return;
 
-    try { S.player.stop(); S.player.close(); } catch(e) {}
+    console.log("PLAY:", ch.name, ch.url);
+
+    DOM.ui.style.display = "none";
 
     try {
-      // Bind the player to the dynamically created video element
-      if (S.videoElement) {
-        S.player.setDisplay(S.videoElement);
-      }
+      S.player.stop();
+      S.player.close();
+    } catch {}
 
-      // Use actual screen dimensions
-      const screenWidth = window.screen.availWidth || window.screen.width;
-      const screenHeight = window.screen.availHeight || window.screen.height;
-
+    try {
       S.player.open(ch.url);
-      S.player.setDisplayRect(0, 0, screenWidth, screenHeight);
 
-      if (S.player.setDisplayMethod) {
-        S.player.setDisplayMethod(webapis.avplay.AVPlayDisplayMode.PLAYER_DISPLAY_MODE_FULL_SCREEN);
-      }
+      S.player.setDisplayRect(0, 0, 1920, 1080);
 
-      S.player.setStreamingProperty("BUFFERING_TIME", CONFIG.BUFFER);
+      S.player.setListener({
+        onbufferingstart: () => console.log("Buffering..."),
+        onbufferingcomplete: () => console.log("Buffer done"),
+        onstreamcompleted: () => console.log("Stream ended"),
+        onerror: e => console.error("AVPlay error", e)
+      });
+
       S.player.prepareAsync(
         () => {
-          console.log("AVPlay prepared, starting playback");
           S.player.play();
+          S.isPlaying = true;
         },
-        (error) => console.error("AVPlay prepare error:", error)
+        err => console.error("Prepare error", err)
       );
-      prebufferNext(index);
-    } catch(e) {
-      console.error("AVPlay play error:", e);
-      S.isFullscreen = false;
-      S.dom.ui.style.display = "block";
+
+    } catch (e) {
+      console.error("Playback failed", e);
     }
   }
 
   function stopPlayer() {
-    try{ S.player.stop(); S.player.close(); }catch(e){}
-    S.isFullscreen = false;
-    S.dom.ui.style.display = "block";
-  }
+    try {
+      S.player.stop();
+      S.player.close();
+    } catch {}
 
-  function prebufferNext(index) {
-    const nextIndexes = [(index+1)%S.flat.length, (index+2)%S.flat.length];
-    nextIndexes.forEach(nextIndex => {
-      const nextCh = S.flat[nextIndex]; if(!nextCh) return;
-      try {
-        if(S.prebufferIndex !== nextIndex){
-          const pb = webapis.avplay;
-          pb.open(nextCh.url);
-          pb.setDisplayRect(-screen.width, -screen.height, 1, 1);
-          pb.prepareAsync(()=>{}, ()=>{});
-          S.prebufferIndex = nextIndex;
-        }
-      } catch {}
-    });
+    DOM.ui.style.display = "block";
+    S.isPlaying = false;
   }
 
   /* =========================
-     REMOTE + NAVIGATION (unchanged)
+     REMOTE CONTROL (FIXED)
   ========================== */
-  function zap(dir) {
-    let i = S.currentIndex + dir;
-    if(i < 0) i = S.flat.length - 1;
-    if(i >= S.flat.length) i = 0;
-    play(i);
-  }
-
   function onKey(e) {
-    if(S.isFullscreen){
-      switch(e.key){
-        case "ChannelUp": case "ArrowUp": zap(1); return;
-        case "ChannelDown": case "ArrowDown": zap(-1); return;
-        case "Return": case "Escape": stopPlayer(); return;
+
+    if (S.isPlaying) {
+      if (e.key === "Return" || e.key === "Escape") {
+        stopPlayer();
       }
       return;
     }
 
-    switch(e.key){
-      case "ArrowDown": S.focusRow++; S.focusCol=0; break;
-      case "ArrowUp": S.focusRow--; S.focusCol=0; break;
+    switch (e.key) {
       case "ArrowRight": S.focusCol++; break;
       case "ArrowLeft": S.focusCol--; break;
+      case "ArrowDown": S.focusRow++; S.focusCol = 0; break;
+      case "ArrowUp": S.focusRow--; S.focusCol = 0; break;
+
       case "Enter":
-        const row = S.rows[S.focusRow];
-        const ch = row.items[S.focusCol];
-        play(S.flat.indexOf(ch));
+        playChannel();  // 🔥 FIXED
         return;
-      case "ColorF1Green": loadPlaylistPrompt(); return;
-      case "ColorF2Yellow": searchPrompt(); return;
     }
 
-    clampFocus();
+    clamp();
     setFocus();
   }
 
-  function clampFocus() {
-    S.focusRow = Math.max(0, Math.min(S.focusRow, S.rows.length-1));
-    const max = S.rows[S.focusRow].items.length-1;
+  function clamp() {
+    S.focusRow = Math.max(0, Math.min(S.focusRow, S.rows.length - 1));
+
+    const max = S.rows[S.focusRow].items.length - 1;
     S.focusCol = Math.max(0, Math.min(S.focusCol, max));
   }
 
-  /* =========================
-     HELPERS (unchanged)
-  ========================== */
   function div(cls, txt) {
     const d = document.createElement("div");
-    if(cls) d.className = cls;
-    if(txt) d.textContent = txt;
+    d.className = cls;
+    if (txt) d.textContent = txt;
     return d;
   }
-
-  function searchPrompt() {
-    const q = prompt("Search channel:");
-    if(!q) return;
-    S.rows.forEach((row,r) => {
-      row.items.forEach((ch,c) => {
-        if(ch.name.toLowerCase().includes(q.toLowerCase())){
-          S.focusRow = r;
-          S.focusCol = c;
-          setFocus();
-        }
-      });
-    });
-  }
-
-  function loadPlaylistPrompt() {
-    const url = prompt("Enter M3U URL:");
-    if(!url) return;
-    S.storage.set("custom_playlist", url);
-    location.reload();
-  }
-
-  /* =========================
-     START
-  ========================== */
-  window.addEventListener("keydown", onKey);
 
   return { init };
 })();
