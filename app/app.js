@@ -1,10 +1,12 @@
 /* =========================
-   IPTV ENGINE v6 – FULL PRODUCTION READY
-   Features: YouTube-style splash, fullscreen, AVPlay, pre-buffer, remote nav, search
+   IPTV ENGINE v6 – FULL UPGRADED
 ========================= */
 
 const App = (() => {
 
+  /* =========================
+     STATE
+  ========================== */
   const S = {
     channels: [],
     rows: [],
@@ -16,6 +18,7 @@ const App = (() => {
     player: null,
     isFullscreen: false,
     prebufferIndex: null,
+    overlayTimeout: null,
     dom: {
       rows: document.getElementById("rows"),
       overlay: document.getElementById("overlay"),
@@ -38,9 +41,12 @@ const App = (() => {
     }
   };
 
+  /* =========================
+     CONFIG
+  ========================== */
   const CONFIG = {
     PLAYLIST: S.storage.get("custom_playlist") || "https://iptv-org.github.io/iptv/languages/tel.m3u",
-    BUFFER: "300",
+    BUFFER: "200",
     VISIBLE_TILES: 6
   };
 
@@ -57,9 +63,11 @@ const App = (() => {
     buildRows();
     renderRows();
     setFocus();
+    hideSplash();
 
-    // Splash fade after 1.5s
-    setTimeout(hideSplash, 1500);
+    // Add remote icons functionality
+    S.dom.searchBtn.addEventListener("click", searchPrompt);
+    S.dom.addBtn.addEventListener("click", loadPlaylistPrompt);
   }
 
   /* =========================
@@ -68,56 +76,13 @@ const App = (() => {
   function showSplash() {
     const splash = document.createElement("div");
     splash.id = "splash";
-
-    const inner = document.createElement("div");
-    inner.className = "splash-inner";
-
-    const logo = document.createElement("div");
-    logo.className = "splash-logo";
-
-    const text = document.createElement("div");
-    text.className = "splash-text";
-    text.textContent = "Tizen TV";
-
-    inner.appendChild(logo);
-    inner.appendChild(text);
-    splash.appendChild(inner);
-
-    // Splash styling
-    splash.style.position = "fixed";
-    splash.style.inset = 0;
-    splash.style.background = "#000";
-    splash.style.display = "flex";
-    splash.style.justifyContent = "center";
-    splash.style.alignItems = "center";
-    splash.style.flexDirection = "column";
-    splash.style.zIndex = 1000;
-    splash.style.opacity = 1;
-    splash.style.transition = "opacity 0.8s ease";
-
-    logo.style.width = "120px";
-    logo.style.height = "120px";
-    logo.style.borderRadius = "50%";
-    logo.style.background = "#fff";
-    logo.style.marginBottom = "20px";
-
-    text.style.color = "#fff";
-    text.style.fontSize = "48px";
-    text.style.fontWeight = "900";
-    text.style.fontFamily = "Arial Black, Arial, sans-serif";
-
+    splash.textContent = "Tizen TV";
     document.body.appendChild(splash);
   }
 
   function hideSplash() {
     const splash = document.getElementById("splash");
-    if(!splash) return;
-    splash.style.opacity = 0;
-    setTimeout(() => {
-      splash.remove();
-      S.dom.ui.style.display = "block";
-      setFocus();
-    }, 800);
+    if(splash) splash.remove();
   }
 
   /* =========================
@@ -150,7 +115,7 @@ const App = (() => {
       if (!map[ch.group]) map[ch.group] = [];
       map[ch.group].push(ch);
     });
-    const groups = Object.keys(map).sort((a,b)=>a.localeCompare(b));
+    const groups = Object.keys(map).sort((a,b) => a.localeCompare(b));
     S.rows = groups.map(g => ({ title: g, items: map[g] }));
     S.flat = S.channels;
   }
@@ -191,10 +156,10 @@ const App = (() => {
   }
 
   /* =========================
-     FOCUS + SCROLL
+     FOCUS & SCROLL
   ========================== */
   function setFocus() {
-    document.querySelectorAll(".card.active").forEach(e=>e.classList.remove("active"));
+    document.querySelectorAll(".card.active").forEach(e => e.classList.remove("active"));
 
     const rowEl = S.dom.rows.children[S.focusRow];
     if(!rowEl) return;
@@ -207,8 +172,7 @@ const App = (() => {
   }
 
   function scrollRow(items) {
-    if (!S.rowScroll[S.focusRow]) S.rowScroll[S.focusRow] = 0;
-
+    if(!S.rowScroll[S.focusRow]) S.rowScroll[S.focusRow] = 0;
     let scroll = S.rowScroll[S.focusRow];
     const visible = CONFIG.VISIBLE_TILES;
 
@@ -217,26 +181,26 @@ const App = (() => {
 
     S.rowScroll[S.focusRow] = scroll;
     const offset = scroll * 280;
+    items.style.transition = "transform 0.3s ease";
     items.style.transform = `translateX(${-offset}px)`;
   }
 
   function updateOverlay() {
-    if(S.isFullscreen) return;
     const ch = S.rows[S.focusRow].items[S.focusCol];
     if(ch) {
       S.dom.overlay.textContent = ch.name;
       S.dom.overlay.style.opacity = 1;
-      setTimeout(()=>S.dom.overlay.style.opacity=0, 1500);
+      clearTimeout(S.overlayTimeout);
+      S.overlayTimeout = setTimeout(()=>{ S.dom.overlay.style.opacity = 0; }, 1500);
     }
   }
 
   function getFlatIndex(r,c) {
-    const row = S.rows[r];
-    return S.flat.indexOf(row.items[c]);
+    return S.flat.indexOf(S.rows[r].items[c]);
   }
 
   /* =========================
-     AVPLAY PLAYER
+     PLAYER (AVPlay)
   ========================== */
   function play(index) {
     const ch = S.flat[index];
@@ -244,64 +208,52 @@ const App = (() => {
 
     S.currentIndex = index;
     S.isFullscreen = true;
-
-    // Hide grid and overlay
     S.dom.ui.style.display = "none";
-    S.dom.overlay.style.opacity = 0;
 
-    try { S.player.stop(); S.player.close(); } catch(e){}
+    try{ S.player.stop(); S.player.close(); }catch(e){}
 
-    try {
+    try{
       S.player.open(ch.url);
       S.player.setDisplayRect(0,0,1920,1080);
       S.player.setStreamingProperty("BUFFERING_TIME", CONFIG.BUFFER);
-      S.player.prepareAsync(()=>S.player.play(), err=>console.error(err));
+      S.player.prepareAsync(()=>S.player.play(), err=>console.error("AVPlay prepare error:",err));
       prebufferNext(index);
-    } catch(e){ console.error("AVPlay play error",e);}
+    }catch(e){ console.error("AVPlay play error", e);}
   }
 
   function stopPlayer() {
-    try { S.player.stop(); S.player.close(); } catch(e){}
+    try{ S.player.stop(); S.player.close(); }catch(e){}
     S.isFullscreen = false;
-
-    // Show UI grid again
     S.dom.ui.style.display = "block";
-    setFocus();
+  }
+
+  function prebufferNext(index) {
+    const nextIndexes = [(index+1)%S.flat.length,(index+2)%S.flat.length];
+    nextIndexes.forEach(nextIndex => {
+      const nextCh = S.flat[nextIndex]; if(!nextCh) return;
+      try{
+        if(S.prebufferIndex !== nextIndex){
+          const pb = webapis.avplay;
+          pb.open(nextCh.url);
+          pb.setDisplayRect(-1920,-1080,1,1);
+          pb.prepareAsync(()=>{}, ()=>{});
+          S.prebufferIndex = nextIndex;
+        }
+      } catch {}
+    });
   }
 
   /* =========================
-     PREBUFFER NEXT CHANNEL
+     REMOTE + NAVIGATION
   ========================== */
-  function prebufferNext(index){
-    const nextIndex = (index+1) % S.flat.length;
-    const nextCh = S.flat[nextIndex];
-    if(!nextCh) return;
-
-    try {
-      if(S.prebufferIndex!==nextIndex){
-        const pb = webapis.avplay;
-        pb.open(nextCh.url);
-        pb.setDisplayRect(-1920,-1080,1,1);
-        pb.prepareAsync(()=>{}, ()=>{});
-        S.prebufferIndex = nextIndex;
-      }
-    } catch{}
-  }
-
-  /* =========================
-     ZAPPING
-  ========================== */
-  function zap(dir){
+  function zap(dir) {
     let i = S.currentIndex + dir;
-    if(i <0) i=S.flat.length-1;
-    if(i>=S.flat.length) i=0;
+    if(i < 0) i = S.flat.length - 1;
+    if(i >= S.flat.length) i = 0;
     play(i);
   }
 
-  /* =========================
-     REMOTE INPUT
-  ========================== */
-  function onKey(e){
+  function onKey(e) {
     if(S.isFullscreen){
       switch(e.key){
         case "ChannelUp": case "ArrowUp": zap(1); return;
@@ -325,38 +277,46 @@ const App = (() => {
     setFocus();
   }
 
-  function clampFocus(){
-    S.focusRow = Math.max(0, Math.min(S.focusRow,S.rows.length-1));
+  function clampFocus() {
+    S.focusRow = Math.max(0, Math.min(S.focusRow, S.rows.length-1));
     const max = S.rows[S.focusRow].items.length-1;
-    S.focusCol = Math.max(0, Math.min(S.focusCol,max));
+    S.focusCol = Math.max(0, Math.min(S.focusCol, max));
   }
 
-  function div(cls, txt){
-    const d=document.createElement("div");
-    if(cls)d.className=cls;
-    if(txt)d.textContent=txt;
+  /* =========================
+     HELPERS
+  ========================== */
+  function div(cls, txt) {
+    const d = document.createElement("div");
+    if(cls) d.className = cls;
+    if(txt) d.textContent = txt;
     return d;
   }
 
-  function searchPrompt(){
+  function searchPrompt() {
     const q = prompt("Search channel:");
     if(!q) return;
-    S.rows.forEach((row,r)=>{
-      row.items.forEach((ch,c)=>{
+    S.rows.forEach((row,r) => {
+      row.items.forEach((ch,c) => {
         if(ch.name.toLowerCase().includes(q.toLowerCase())){
-          S.focusRow=r; S.focusCol=c; setFocus();
+          S.focusRow = r;
+          S.focusCol = c;
+          setFocus();
         }
       });
     });
   }
 
-  function loadPlaylistPrompt(){
+  function loadPlaylistPrompt() {
     const url = prompt("Enter M3U URL:");
     if(!url) return;
     S.storage.set("custom_playlist", url);
     location.reload();
   }
 
+  /* =========================
+     START
+  ========================== */
   window.addEventListener("keydown", onKey);
 
   return { init };
