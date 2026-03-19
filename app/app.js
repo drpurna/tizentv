@@ -1,16 +1,14 @@
-// ================= GLOBAL =================
+// ===== GLOBAL =====
 let channels = [
   {
     name: "Test Stream 1",
     group: "Live",
-    url: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
-    logo: ""
+    url: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
   },
   {
     name: "Test Stream 2",
     group: "Live",
-    url: "https://bitdash-a.akamaihd.net/content/sintel/hls/playlist.m3u8",
-    logo: ""
+    url: "https://bitdash-a.akamaihd.net/content/sintel/hls/playlist.m3u8"
   }
 ];
 
@@ -21,12 +19,10 @@ const videoContainer = document.getElementById("video");
 const ui = document.getElementById("ui");
 const overlay = document.getElementById("overlay");
 
-// ================= LOAD =================
+// ===== LOAD (SAFE) =====
 async function loadChannels() {
 
   ui.innerHTML = "Loading channels...";
-
-  let text = "";
 
   try {
     const res = await fetch(
@@ -34,54 +30,47 @@ async function loadChannels() {
     );
 
     if (res.ok) {
-      text = await res.text();
+      const text = await res.text();
+      const parsed = parseM3U(text);
+
+      if (parsed.length > 0) {
+        channels = parsed;
+      }
     }
 
   } catch (e) {
-    console.log("Fetch failed → using fallback");
-  }
-
-  if (text) {
-    const parsed = parseM3U(text);
-    if (parsed.length > 0) {
-      channels = parsed;
-    }
+    console.log("Fetch blocked → using test channels");
   }
 
   buildCategories();
   render();
 }
 
-// ================= PARSE =================
+// ===== PARSE =====
 function parseM3U(text) {
   const lines = text.split("\n");
   const result = [];
 
-  let name = "", group = "Other", logo = "";
+  let name = "", group = "Other";
 
   for (let line of lines) {
 
     if (line.startsWith("#EXTINF")) {
-
       name = line.split(",").pop();
 
       const g = line.match(/group-title="(.*?)"/);
       group = g ? g[1] : "Other";
-
-      const l = line.match(/tvg-logo="(.*?)"/);
-      logo = l ? l[1] : "";
-
     }
 
     else if (line.startsWith("http")) {
-      result.push({ name, group, url: line.trim(), logo });
+      result.push({ name, group, url: line.trim() });
     }
   }
 
-  return result.slice(0, 120);
+  return result.slice(0, 100);
 }
 
-// ================= CATEGORY =================
+// ===== CATEGORY =====
 function buildCategories() {
   categories = {};
 
@@ -93,7 +82,7 @@ function buildCategories() {
   });
 }
 
-// ================= RENDER =================
+// ===== RENDER =====
 function render() {
 
   ui.innerHTML = "";
@@ -115,17 +104,16 @@ function render() {
       const card = document.createElement("div");
       card.className = "card";
       card.tabIndex = 0;
+      card.innerText = ch.name;
 
-      if (ch.logo) {
-        const img = document.createElement("img");
-        img.src = ch.logo;
-        card.appendChild(img);
-      } else {
-        card.innerText = ch.name;
-      }
+      // 🔥 CLICK FIX (CRITICAL)
+      card.addEventListener("click", function () {
+        play(ch);
+      });
 
-      card.addEventListener("click", () => play(ch));
-      card.addEventListener("focus", () => currentFocus = card);
+      card.addEventListener("focus", function () {
+        currentFocus = card;
+      });
 
       items.appendChild(card);
     });
@@ -136,13 +124,14 @@ function render() {
   });
 
   setTimeout(() => {
-    const first = document.querySelector(".card");
-    if (first) first.focus();
+    document.querySelector(".card")?.focus();
   }, 200);
 }
 
-// ================= PLAY =================
+// ===== PLAY (FINAL FIX) =====
 function play(ch) {
+
+  console.log("PLAY:", ch.name);
 
   overlay.innerText = ch.name;
   overlay.style.opacity = 1;
@@ -150,42 +139,51 @@ function play(ch) {
 
   ui.style.display = "none";
 
+  // ✅ ALWAYS PLAY HTML5 FIRST (GUARANTEED)
+  playHTML5(ch.url);
+
+  // OPTIONAL AVPLAY (NON-BLOCKING)
   if (window.webapis && webapis.avplay) {
     try {
-      webapis.avplay.stop();
-      webapis.avplay.close();
-      webapis.avplay.open(ch.url);
-      webapis.avplay.prepareAsync(() => {
-        webapis.avplay.play();
-      });
-      return;
-    } catch (e) {
-      console.log("AVPlay failed → fallback");
-    }
+      setTimeout(() => {
+        webapis.avplay.stop();
+        webapis.avplay.close();
+        webapis.avplay.open(ch.url);
+        webapis.avplay.prepareAsync(() => {
+          webapis.avplay.play();
+        });
+      }, 2000);
+    } catch (e) {}
   }
-
-  playHTML5(ch.url);
 }
 
-// ================= HTML5 =================
+// ===== HTML5 PLAYER =====
 function playHTML5(url) {
 
   videoContainer.innerHTML = "";
 
   const video = document.createElement("video");
+
   video.src = url;
   video.autoplay = true;
   video.controls = true;
+  video.playsInline = true;
 
   video.style.width = "100%";
   video.style.height = "100%";
 
-  video.onerror = () => alert("Channel not working");
+  video.addEventListener("loadedmetadata", () => {
+    video.play().catch(() => {});
+  });
+
+  video.onerror = () => {
+    alert("Stream failed");
+  };
 
   videoContainer.appendChild(video);
 }
 
-// ================= REMOTE =================
+// ===== REMOTE =====
 document.addEventListener("keydown", e => {
 
   const focus = document.activeElement;
@@ -221,5 +219,5 @@ document.addEventListener("keydown", e => {
 
 });
 
-// ================= INIT =================
+// ===== INIT =====
 loadChannels();
