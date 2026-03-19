@@ -1,5 +1,5 @@
 /* =========================
-   IPTV ENGINE v6 – FULL UPGRADED
+   IPTV ENGINE v6 – FULL UPGRADED (FIXED)
 ========================= */
 
 const App = (() => {
@@ -51,19 +51,27 @@ const App = (() => {
   };
 
   /* =========================
-     INIT
+     INIT – with splash fix
   ========================== */
   async function init() {
     showSplash();
 
-    try { S.player = webapis.avplay; } catch(e){ console.warn("AVPlay not available", e); }
+    try {
+      // Try to get AVPlay – it's okay if it's not available (maybe fallback to HTML5 later)
+      try { S.player = webapis.avplay; } catch(e){ console.warn("AVPlay not available", e); }
 
-    const text = await fetch(CONFIG.PLAYLIST).then(r => r.text());
-    S.channels = parse(text);
-    buildRows();
-    renderRows();
-    setFocus();
-    hideSplash();
+      const text = await fetch(CONFIG.PLAYLIST).then(r => r.text());
+      S.channels = parse(text);
+      buildRows();
+      renderRows();
+      setFocus();
+    } catch (error) {
+      console.error("Init error:", error);
+      S.dom.overlay.textContent = "Failed to load playlist";
+      S.dom.overlay.style.opacity = 1;
+    } finally {
+      hideSplash(); // Always hide splash, even after error
+    }
 
     // Add remote icons functionality
     S.dom.searchBtn.addEventListener("click", searchPrompt);
@@ -156,7 +164,7 @@ const App = (() => {
   }
 
   /* =========================
-     FOCUS & SCROLL
+     FOCUS & SCROLL (fixed)
   ========================== */
   function setFocus() {
     document.querySelectorAll(".card.active").forEach(e => e.classList.remove("active"));
@@ -172,17 +180,31 @@ const App = (() => {
   }
 
   function scrollRow(items) {
-    if(!S.rowScroll[S.focusRow]) S.rowScroll[S.focusRow] = 0;
-    let scroll = S.rowScroll[S.focusRow];
+    if (!items) return;
+    const rowIndex = S.focusRow;
+    if (!S.rowScroll[rowIndex]) S.rowScroll[rowIndex] = 0;
+    let scroll = S.rowScroll[rowIndex];
     const visible = CONFIG.VISIBLE_TILES;
+    const totalItems = items.children.length;
 
-    if(S.focusCol >= scroll + visible) scroll = S.focusCol - visible + 1;
-    if(S.focusCol < scroll) scroll = S.focusCol;
+    if (totalItems <= visible) {
+      scroll = 0; // No scrolling needed
+    } else {
+      if (S.focusCol >= scroll + visible) {
+        scroll = S.focusCol - visible + 1;
+      }
+      if (S.focusCol < scroll) {
+        scroll = S.focusCol;
+      }
+      // Ensure scroll doesn't go beyond the last possible position
+      const maxScroll = totalItems - visible;
+      if (scroll > maxScroll) scroll = maxScroll;
+    }
 
-    S.rowScroll[S.focusRow] = scroll;
-    const offset = scroll * 280;
+    S.rowScroll[rowIndex] = scroll;
+    const offset = scroll * 280; // 260px card + 20px gap
     items.style.transition = "transform 0.3s ease";
-    items.style.transform = `translateX(${-offset}px)`;
+    items.style.transform = `translateX(-${offset}px)`;
   }
 
   function updateOverlay() {
@@ -200,25 +222,61 @@ const App = (() => {
   }
 
   /* =========================
-     PLAYER (AVPlay)
+     PLAYER (AVPlay) – fixed fullscreen & video element
   ========================== */
   function play(index) {
     const ch = S.flat[index];
-    if(!ch || !S.player) return;
+    if (!ch || !S.player) {
+      console.error("Cannot play: channel missing or AVPlay unavailable");
+      return;
+    }
 
     S.currentIndex = index;
     S.isFullscreen = true;
     S.dom.ui.style.display = "none";
 
-    try{ S.player.stop(); S.player.close(); }catch(e){}
+    try { S.player.stop(); S.player.close(); } catch(e) {}
 
-    try{
+    try {
+      // Attach the player to the video element (essential!)
+      const videoElement = document.getElementById('av-player');
+      if (videoElement) {
+        S.player.setDisplay(videoElement);
+      } else {
+        console.warn("Video element #av-player not found");
+      }
+
+      // Get actual screen dimensions (avoid overscan with availWidth/Height)
+      const screenWidth = window.screen.availWidth || window.screen.width;
+      const screenHeight = window.screen.availHeight || window.screen.height;
+      console.log(`Setting display rect to 0,0,${screenWidth},${screenHeight}`);
+
       S.player.open(ch.url);
-      S.player.setDisplayRect(0,0,1920,1080);
+      S.player.setDisplayRect(0, 0, screenWidth, screenHeight);
+
+      // Force full-screen mode on newer Tizen
+      if (S.player.setDisplayMethod) {
+        S.player.setDisplayMethod(webapis.avplay.AVPlayDisplayMode.PLAYER_DISPLAY_MODE_FULL_SCREEN);
+      }
+
       S.player.setStreamingProperty("BUFFERING_TIME", CONFIG.BUFFER);
-      S.player.prepareAsync(()=>S.player.play(), err=>console.error("AVPlay prepare error:",err));
+      S.player.prepareAsync(
+        () => {
+          console.log("AVPlay prepared, starting playback");
+          S.player.play();
+        },
+        (error) => {
+          console.error("AVPlay prepare error:", error);
+          // If AVPlay fails, you could try a fallback (e.g., HTML5 video) here
+        }
+      );
       prebufferNext(index);
-    }catch(e){ console.error("AVPlay play error", e);}
+    } catch(e) {
+      console.error("AVPlay play error:", e);
+      // Restore UI on error
+      S.isFullscreen = false;
+      S.dom.ui.style.display = "block";
+    }
   }
 
   function stopPlayer() {
@@ -228,14 +286,15 @@ const App = (() => {
   }
 
   function prebufferNext(index) {
-    const nextIndexes = [(index+1)%S.flat.length,(index+2)%S.flat.length];
+    const nextIndexes = [(index+1)%S.flat.length, (index+2)%S.flat.length];
     nextIndexes.forEach(nextIndex => {
       const nextCh = S.flat[nextIndex]; if(!nextCh) return;
-      try{
+      try {
         if(S.prebufferIndex !== nextIndex){
           const pb = webapis.avplay;
           pb.open(nextCh.url);
-          pb.setDisplayRect(-1920,-1080,1,1);
+          // Off-screen rectangle (small and negative) – can also use dynamic dimensions
+          pb.setDisplayRect(-screen.width, -screen.height, 1, 1);
           pb.prepareAsync(()=>{}, ()=>{});
           S.prebufferIndex = nextIndex;
         }
@@ -268,7 +327,11 @@ const App = (() => {
       case "ArrowUp": S.focusRow--; S.focusCol=0; break;
       case "ArrowRight": S.focusCol++; break;
       case "ArrowLeft": S.focusCol--; break;
-      case "Enter": const row=S.rows[S.focusRow]; const ch=row.items[S.focusCol]; play(S.flat.indexOf(ch)); return;
+      case "Enter":
+        const row = S.rows[S.focusRow];
+        const ch = row.items[S.focusCol];
+        play(S.flat.indexOf(ch));
+        return;
       case "ColorF1Green": loadPlaylistPrompt(); return;
       case "ColorF2Yellow": searchPrompt(); return;
     }
