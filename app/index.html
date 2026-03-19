@@ -1,35 +1,32 @@
 <!doctype html>
-<html lang="en">
+<html>
 <head>
-<meta charset="UTF-8">
-<title>Tizen TV</title>
-<link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8">
+  <title>Tizen TV</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<!-- PLAYER (AVPlay Fullscreen) -->
-<div id="player"></div>
+  <div id="player"></div>
 
-<!-- HEADER (YouTube style) -->
-<div id="header">
-  <div class="logo">Tizen TV</div>
-  <div class="actions">
-    <div class="icon" id="searchBtn" title="Search Playlist">🔍</div>
-    <div class="icon" id="addBtn" title="Add Custom Playlist">➕</div>
+  <!-- HEADER -->
+  <div id="header">
+    <div class="logo">Tizen TV</div>
+    <div class="actions">
+      <div class="icon" id="searchBtn">🔍</div>
+      <div class="icon" id="addBtn">➕</div>
+    </div>
   </div>
-</div>
 
-<!-- UI overlay -->
-<div id="ui">
-  <div id="overlay"></div>
-  <div id="rows"></div>
-</div>
+  <!-- UI OVERLAY -->
+  <div id="ui">
+    <div id="overlay"></div>
+    <div id="rows"></div>
+  </div>
 
-<!-- FOOTER HELP -->
-<div class="footer">
-  Use Remote: ↑↓ navigate rows, ←→ select channel, Enter play, Return exit fullscreen.
-</div>
+  <!-- hls.js for browser fallback HLS -->
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 
-<script src="app.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
