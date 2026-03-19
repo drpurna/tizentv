@@ -1,132 +1,148 @@
+const video = document.getElementById("video");
+const grid = document.getElementById("grid");
+const loader = document.getElementById("loader");
+const player = document.getElementById("playerContainer");
+
 let channels = [];
 let categories = {};
-let currentFocus = null;
 
-const videoContainer = document.getElementById("video");
-const grid = document.getElementById("grid");
-const ui = document.getElementById("ui");
-const overlay = document.getElementById("overlay");
-const loader = document.getElementById("loader");
+const PLAYLISTS = [
+  { name: "Telugu", url: "https://iptv-org.github.io/iptv/languages/tel.m3u" },
+  { name: "India", url: "https://iptv-org.github.io/iptv/countries/in.m3u" }
+];
 
-// STORAGE
-function getPlaylists() {
-  return JSON.parse(localStorage.getItem("playlists") || "[]");
+const cache = {};
+
+/* INIT */
+renderPlaylists();
+setTimeout(() => document.querySelector(".playlist-btn")?.click(), 300);
+
+/* PLAYLIST BAR */
+function renderPlaylists() {
+  const bar = document.getElementById("playlistBar");
+  bar.innerHTML = "";
+
+  PLAYLISTS.forEach(p => {
+    const btn = document.createElement("div");
+    btn.className = "playlist-btn";
+    btn.innerText = p.name;
+    btn.tabIndex = 0;
+
+    btn.onclick = () => loadPlaylist(p, btn);
+
+    bar.appendChild(btn);
+  });
 }
 
-function savePlaylists(p) {
-  localStorage.setItem("playlists", JSON.stringify(p));
-}
+/* LOAD PLAYLIST */
+async function loadPlaylist(p, btn) {
 
-// LOAD CHANNELS
-async function loadChannels() {
+  loader.style.display = "block";
+  grid.innerHTML = "";
 
-  try {
-    const res = await fetch("https://iptv-org.github.io/iptv/languages/tel.m3u");
-    const text = await res.text();
-    channels = parseM3U(text);
-  } catch {}
+  document.querySelectorAll(".playlist-btn")
+    .forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
 
-  buildCategories();
-  render();
-}
-
-// PARSE
-function parseM3U(text) {
-  const lines = text.split("\n");
-  const result = [];
-
-  let name="", group="Other", logo="";
-
-  for (let line of lines) {
-
-    if (line.startsWith("#EXTINF")) {
-      name = line.split(",").pop();
-
-      const g = line.match(/group-title="(.*?)"/);
-      group = g ? g[1] : "Other";
-
-      const l = line.match(/tvg-logo="(.*?)"/);
-      logo = l ? l[1] : "";
-    }
-
-    else if (line.startsWith("http")) {
-      result.push({ name, group, logo, url: line.trim() });
-    }
+  if (cache[p.url]) {
+    channels = cache[p.url];
+    finish();
+    return;
   }
 
-  return result.slice(0,200);
+  try {
+    const res = await fetch(p.url);
+    const text = await res.text();
+
+    channels = parseM3U(text);
+    cache[p.url] = channels;
+
+    finish();
+
+  } catch (e) {
+    alert("Playlist failed");
+  }
 }
 
-// CATEGORY
+/* PARSER */
+function parseM3U(data) {
+
+  const lines = data.split("\n");
+  const result = [];
+  let ch = {};
+
+  lines.forEach(line => {
+
+    if (line.startsWith("#EXTINF")) {
+
+      const name = line.split(",")[1];
+      const logo = (line.match(/tvg-logo="(.*?)"/) || [])[1] || "";
+      const group = (line.match(/group-title="(.*?)"/) || [])[1] || "Other";
+
+      ch = { name, logo, group };
+
+    } else if (line.startsWith("http")) {
+
+      ch.url = line.trim();
+
+      if (ch.url.includes(".m3u8")) {
+        result.push(ch);
+      }
+
+      ch = {};
+    }
+  });
+
+  return result.slice(0, 500);
+}
+
+/* BUILD CATEGORY */
 function buildCategories() {
 
-  categories = {
-    Devotional: [],
-    News: [],
-    Movies: [],
-    Sports: [],
-    Entertainment: [],
-    "My Channels": [],
-    Others: []
-  };
+  categories = {};
 
   channels.forEach(ch => {
 
-    const n = ch.name.toLowerCase();
+    let cat = ch.group || "Other";
 
-    if (n.includes("bhakti") || n.includes("devotional")) categories.Devotional.push(ch);
-    else if (n.includes("news")) categories.News.push(ch);
-    else if (n.includes("movie")) categories.Movies.push(ch);
-    else if (n.includes("sport")) categories.Sports.push(ch);
-    else if (n.includes("tv")) categories.Entertainment.push(ch);
-    else categories.Others.push(ch);
+    if (cat.toLowerCase().includes("religion"))
+      cat = "Devotional";
+
+    if (!categories[cat]) categories[cat] = [];
+    categories[cat].push(ch);
   });
-
-  let manual = [];
-  getPlaylists().forEach(p => manual = manual.concat(p.channels));
-  categories["My Channels"] = manual;
 }
 
-// RENDER
+/* RENDER */
 function render() {
 
   grid.innerHTML = "";
 
-  Object.keys(categories).forEach(group => {
-
-    if (!categories[group].length) return;
+  Object.keys(categories).forEach(cat => {
 
     const row = document.createElement("div");
     row.className = "row";
 
     const title = document.createElement("div");
     title.className = "row-title";
-    title.innerText = group;
+    title.innerText = cat;
 
     const items = document.createElement("div");
     items.className = "row-items";
 
-    categories[group].forEach(ch => {
+    categories[cat].forEach(ch => {
 
       const card = document.createElement("div");
       card.className = "card";
       card.tabIndex = 0;
 
-      if (ch.logo) {
-        const img = document.createElement("img");
-        img.src = ch.logo;
-        img.onerror = () => card.innerText = ch.name;
-        card.appendChild(img);
-      } else {
-        card.innerText = ch.name;
-      }
+      const img = document.createElement("img");
+      img.src = ch.logo || "https://via.placeholder.com/300x150?text=TV";
+      img.onerror = () => img.src = "https://via.placeholder.com/300x150?text=TV";
 
-      card.onclick = () => play(ch);
+      card.appendChild(img);
 
-      card.addEventListener("focus", () => {
-        currentFocus = card;
-        card.scrollIntoView({ behavior:"smooth", inline:"center" });
-      });
+      card.onclick = () => play(ch.url);
 
       items.appendChild(card);
     });
@@ -135,133 +151,45 @@ function render() {
     row.appendChild(items);
     grid.appendChild(row);
   });
-
-  setTimeout(()=>document.querySelector(".card")?.focus(),200);
 }
 
-// PLAY
-function play(ch) {
-
-  overlay.innerText = ch.name;
-  overlay.style.opacity = 1;
-  setTimeout(()=>overlay.style.opacity=0,3000);
-
-  ui.style.display = "none";
-  loader.style.display = "block";
-
-  videoContainer.innerHTML = "";
-
-  const video = document.createElement("video");
-  video.src = ch.url;
-  video.autoplay = true;
-  video.controls = true;
-
-  video.style.width = "100%";
-  video.style.height = "100%";
-
-  video.onplaying = () => loader.style.display = "none";
-  video.onerror = () => loader.style.display = "none";
-
-  videoContainer.appendChild(video);
-}
-
-// ADD PLAYLIST
-document.getElementById("addPlaylistBtn").onclick = addPlaylist;
-
-function addPlaylist() {
-
-  const url = prompt("Enter M3U URL");
-  if (!url) return;
-
-  loader.style.display = "block";
-
-  fetch(url)
-    .then(r => r.text())
-    .then(text => {
-
-      const parsed = parseM3U(text);
-
-      let p = getPlaylists();
-      p.push({ name: url, url, channels: parsed });
-
-      savePlaylists(p);
-
-      loader.style.display = "none";
-
-      buildCategories();
-      render();
-    })
-    .catch(()=> loader.style.display="none");
-}
-
-// SETTINGS
-const settingsBtn = document.getElementById("settingsBtn");
-const settingsPanel = document.getElementById("settingsPanel");
-const playlistList = document.getElementById("playlistList");
-
-settingsBtn.onclick = openSettings;
-
-function openSettings() {
-
-  settingsPanel.classList.add("active");
-
-  const playlists = getPlaylists();
-  playlistList.innerHTML = "";
-
-  playlists.forEach((p,i)=>{
-
-    const item = document.createElement("div");
-    item.className = "settings-item";
-
-    item.innerHTML = `<span>${p.name}</span>
-      <button onclick="removePlaylist(${i})">Remove</button>`;
-
-    playlistList.appendChild(item);
-  });
-}
-
-function removePlaylist(i) {
-  let p = getPlaylists();
-  p.splice(i,1);
-  savePlaylists(p);
-  openSettings();
+/* FINISH */
+function finish() {
   buildCategories();
   render();
+  loader.style.display = "none";
 }
 
-// REMOTE
+/* PLAY */
+function play(url) {
+
+  player.style.display = "block";
+
+  try {
+    webapis.avplay.stop();
+    webapis.avplay.close();
+  } catch(e) {}
+
+  try {
+    webapis.avplay.open(url);
+    webapis.avplay.prepareAsync(() => {
+      webapis.avplay.play();
+    });
+  } catch (e) {
+    alert("Cannot play");
+  }
+}
+
+/* REMOTE */
 document.addEventListener("keydown", e => {
 
-  if (settingsPanel.classList.contains("active")) {
-    if (e.key==="Return"||e.key==="Escape") {
-      settingsPanel.classList.remove("active");
-    }
-    return;
+  if (e.key === "Return") {
+
+    player.style.display = "none";
+
+    try {
+      webapis.avplay.stop();
+    } catch(e) {}
+
   }
-
-  const f = document.activeElement;
-
-  if (e.key==="Enter" && currentFocus) currentFocus.click();
-
-  if (e.key==="Escape"||e.key==="Return") {
-    ui.style.display="block";
-    videoContainer.innerHTML="";
-  }
-
-  if (e.key==="ColorF0Red") addPlaylist();
-
-  if (!f.classList.contains("card")) return;
-
-  if (e.key==="ArrowRight") f.nextElementSibling?.focus();
-  if (e.key==="ArrowLeft") f.previousElementSibling?.focus();
-
-  if (e.key==="ArrowDown")
-    f.closest(".row")?.nextElementSibling?.querySelector(".card")?.focus();
-
-  if (e.key==="ArrowUp")
-    f.closest(".row")?.previousElementSibling?.querySelector(".card")?.focus();
-
 });
-
-// INIT
-loadChannels();
