@@ -1,10 +1,13 @@
+// ===== ELEMENTS =====
 const grid = document.getElementById("grid");
 const loader = document.getElementById("loader");
 const player = document.getElementById("playerContainer");
 
+// ===== STATE =====
 let channels = [];
 let categories = {};
 let flatChannels = [];
+let indexMap = new Map(); // fast index lookup
 
 const PLAYLISTS = [
   { name: "Telugu", url: "https://iptv-org.github.io/iptv/languages/tel.m3u" },
@@ -13,11 +16,11 @@ const PLAYLISTS = [
 
 const cache = {};
 
-/* INIT */
+// ===== INIT =====
 renderPlaylists();
 setTimeout(() => document.querySelector(".playlist-btn")?.click(), 300);
 
-/* PLAYLIST UI */
+// ===== PLAYLIST UI =====
 function renderPlaylists() {
   const bar = document.getElementById("playlistBar");
   bar.innerHTML = "";
@@ -34,7 +37,7 @@ function renderPlaylists() {
   });
 }
 
-/* LOAD PLAYLIST */
+// ===== LOAD PLAYLIST =====
 async function loadPlaylist(p, btn) {
 
   loader.style.display = "block";
@@ -67,63 +70,74 @@ async function loadPlaylist(p, btn) {
   }
 }
 
-/* ✅ FIXED PARSER */
+// ===== FAST PARSER (NO FILTER) =====
 function parseM3U(data) {
 
   const lines = data.split("\n");
   const result = [];
-  let ch = {};
 
-  lines.forEach(line => {
+  let name = "", logo = "", group = "";
+
+  for (let i = 0; i < lines.length; i++) {
+
+    const line = lines[i];
 
     if (line.startsWith("#EXTINF")) {
 
-      const name = line.split(",")[1];
-      const logo = (line.match(/tvg-logo="(.*?)"/) || [])[1] || "";
-      const group = (line.match(/group-title="(.*?)"/) || [])[1] || "Other";
+      name = line.split(",")[1] || "";
 
-      ch = { name, logo, group };
+      const l = line.match(/tvg-logo="(.*?)"/);
+      const g = line.match(/group-title="(.*?)"/);
+
+      logo = l ? l[1] : "";
+      group = g ? g[1] : "Other";
 
     } else if (line.startsWith("http")) {
 
-      ch.url = line.trim();
-
-      // ✅ KEEP MOST STREAMS (ONLY SKIP DASH)
-      if (!ch.url.includes(".mpd")) {
-        result.push(ch);
-      }
-
-      ch = {};
+      result.push({
+        name,
+        logo,
+        group,
+        url: line.trim()
+      });
     }
-  });
+  }
 
   return result;
 }
 
-/* BUILD CATEGORY */
+// ===== BUILD CATEGORY (FAST + INDEX MAP) =====
 function buildCategories() {
 
   categories = {};
   flatChannels = [];
+  indexMap.clear();
 
-  channels.forEach(ch => {
+  for (let i = 0; i < channels.length; i++) {
+
+    const ch = channels[i];
 
     let cat = ch.group || "Other";
 
-    if (cat.toLowerCase().includes("religion"))
+    if (cat.toLowerCase().includes("religion")) {
       cat = "Devotional";
+    }
 
     if (!categories[cat]) categories[cat] = [];
+
     categories[cat].push(ch);
 
+    indexMap.set(ch, flatChannels.length);
     flatChannels.push(ch);
-  });
+  }
 }
 
-/* RENDER */
+// ===== RENDER (OPTIMIZED) =====
 function render() {
 
   grid.innerHTML = "";
+
+  const fragment = document.createDocumentFragment();
 
   Object.keys(categories).forEach(cat => {
 
@@ -137,15 +151,19 @@ function render() {
     const items = document.createElement("div");
     items.className = "row-items";
 
-    categories[cat].forEach(ch => {
+    // 🚀 LIMIT PER ROW FOR PERFORMANCE
+    const list = categories[cat].slice(0, 80);
 
-      const index = flatChannels.indexOf(ch);
+    list.forEach(ch => {
+
+      const index = indexMap.get(ch);
 
       const card = document.createElement("div");
       card.className = "card";
       card.tabIndex = 0;
 
       const img = document.createElement("img");
+      img.loading = "lazy";
       img.src = ch.logo || "https://via.placeholder.com/300x150?text=TV";
       img.onerror = () => img.src = "https://via.placeholder.com/300x150?text=TV";
 
@@ -158,23 +176,25 @@ function render() {
 
     row.appendChild(title);
     row.appendChild(items);
-    grid.appendChild(row);
+    fragment.appendChild(row);
   });
+
+  grid.appendChild(fragment);
 }
 
-/* FINISH */
+// ===== FINISH =====
 function finish() {
   buildCategories();
   render();
   loader.style.display = "none";
 }
 
-/* 🔥 FIXED PLAY ENGINE */
+// ===== PLAY ENGINE (FAST + STABLE) =====
 function play(url, index = 0) {
 
   if (!url) return;
 
-  console.log("Playing:", url);
+  console.log("Play:", url);
 
   player.style.display = "block";
   loader.style.display = "block";
@@ -197,10 +217,7 @@ function play(url, index = 0) {
 
       onstreamcompleted: () => playNext(index),
 
-      onerror: () => {
-        console.log("Error → skip");
-        playNext(index);
-      }
+      onerror: () => playNext(index)
 
     });
 
@@ -208,20 +225,19 @@ function play(url, index = 0) {
       webapis.avplay.play();
     });
 
-    // ⏱ TIMEOUT FAILSAFE
+    // ⚡ FAST FAIL → QUICK SKIP
     setTimeout(() => {
       if (loader.style.display === "block") {
-        console.log("Timeout → skip");
         playNext(index);
       }
-    }, 8000);
+    }, 6000);
 
   } catch (e) {
     playNext(index);
   }
 }
 
-/* AUTO SKIP */
+// ===== AUTO SKIP (FAST LOOP) =====
 function playNext(currentIndex) {
 
   for (let i = currentIndex + 1; i < flatChannels.length; i++) {
@@ -234,10 +250,10 @@ function playNext(currentIndex) {
     }
   }
 
-  alert("No playable channels found");
+  alert("No playable channels");
 }
 
-/* EXIT PLAYER */
+// ===== REMOTE EXIT =====
 document.addEventListener("keydown", e => {
 
   if (e.key === "Return") {
