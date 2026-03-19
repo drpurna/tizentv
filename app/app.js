@@ -1,6 +1,6 @@
 /* =========================
-   IPTV ENGINE v6 – FULL UPGRADED
-   Features: Virtual scrolling, AVPlay, Pre-buffer, Zoom, Remote, Search, Splash
+   IPTV ENGINE v6 – FULL UPGRADED + FULLSCREEN CLICK
+   Features: Virtual scrolling, AVPlay, Pre-buffer, Zoom, Remote, Search, Splash, Tile Click Fullscreen
 ========================= */
 
 const App = (() => {
@@ -145,7 +145,12 @@ const App = (() => {
           card.appendChild(img);
         } else card.textContent = ch.name;
 
-        card.addEventListener("click", () => play(getFlatIndex(r,c)));
+        // CLICK -> PLAY + FULLSCREEN TOGGLE
+        card.addEventListener("click", () => {
+          play(getFlatIndex(r,c));
+          toggleFullScreen();
+        });
+
         items.appendChild(card);
       });
 
@@ -200,6 +205,18 @@ const App = (() => {
   function getFlatIndex(r,c) {
     const row = S.rows[r];
     return S.flat.indexOf(row.items[c]);
+  }
+
+  /* =========================
+     FULLSCREEN TOGGLE
+  ========================= */
+  function toggleFullScreen() {
+    S.isFullscreen = !S.isFullscreen;
+    if(S.isFullscreen){
+      S.dom.ui.style.display = "none";
+    } else {
+      S.dom.ui.style.display = "block";
+    }
   }
 
   /* =========================
@@ -277,7 +294,12 @@ const App = (() => {
       case "ArrowUp": S.focusRow--; S.focusCol=0; break;
       case "ArrowRight": S.focusCol++; break;
       case "ArrowLeft": S.focusCol--; break;
-      case "Enter": const row=S.rows[S.focusRow]; const ch=row.items[S.focusCol]; play(S.flat.indexOf(ch)); return;
+      case "Enter": 
+        const row=S.rows[S.focusRow]; 
+        const ch=row.items[S.focusCol]; 
+        play(S.flat.indexOf(ch));
+        toggleFullScreen();
+        return;
       case "ColorF1Green": loadPlaylistPrompt(); return;
       case "ColorF2Yellow": searchPrompt(); return;
     }
