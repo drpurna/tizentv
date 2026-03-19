@@ -1,13 +1,9 @@
 /* =========================
-   IPTV ENGINE v6 – FULL UPGRADED + FULLSCREEN CLICK
-   Features: Virtual scrolling, AVPlay, Pre-buffer, Zoom, Remote, Search, Splash, Tile Click Fullscreen
+   IPTV ENGINE v6 – FULL UPGRADED + VIDEO FALLBACK
 ========================= */
 
 const App = (() => {
 
-  /* =========================
-     STATE
-  ========================= */
   const S = {
     channels: [],
     rows: [],
@@ -17,6 +13,7 @@ const App = (() => {
     currentIndex: 0,
     rowScroll: {},
     player: null,
+    fallbackVideo: null,
     isFullscreen: false,
     prebufferIndex: null,
     dom: {
@@ -41,21 +38,16 @@ const App = (() => {
     }
   };
 
-  /* =========================
-     CONFIG
-  ========================= */
   const CONFIG = {
     PLAYLIST: S.storage.get("custom_playlist") || "https://iptv-org.github.io/iptv/languages/tel.m3u",
     BUFFER: "300",
     VISIBLE_TILES: 6
   };
 
-  /* =========================
-     INIT
-  ========================= */
   async function init() {
     showSplash();
 
+    // Initialize AVPlay if available
     try { S.player = webapis.avplay; } catch(e){ console.warn("AVPlay not available", e); }
 
     const text = await fetch(CONFIG.PLAYLIST).then(r => r.text());
@@ -66,17 +58,11 @@ const App = (() => {
     hideSplash();
   }
 
-  /* =========================
-     SPLASH SCREEN
-  ========================= */
   function showSplash() {
     const splash = document.createElement("div");
     splash.id = "splash";
     splash.style.position = "fixed";
-    splash.style.top = 0;
-    splash.style.left = 0;
-    splash.style.width = "100%";
-    splash.style.height = "100%";
+    splash.style.inset = "0";
     splash.style.background = "black url('splash.png') center/contain no-repeat";
     splash.style.zIndex = 1000;
     document.body.appendChild(splash);
@@ -87,9 +73,6 @@ const App = (() => {
     if(splash) splash.remove();
   }
 
-  /* =========================
-     PARSE PLAYLIST
-  ========================= */
   function parse(text) {
     const lines = text.split("\n");
     let res = [], meta = {};
@@ -108,9 +91,6 @@ const App = (() => {
     return res;
   }
 
-  /* =========================
-     BUILD ROWS (SORTED)
-  ========================= */
   function buildRows() {
     const map = {};
     S.channels.forEach(ch => {
@@ -122,9 +102,6 @@ const App = (() => {
     S.flat = S.channels;
   }
 
-  /* =========================
-     RENDER ROWS + CARDS
-  ========================= */
   function renderRows() {
     const frag = document.createDocumentFragment();
     S.rows.forEach((row, r) => {
@@ -132,7 +109,6 @@ const App = (() => {
       const title = div("row-title", row.title);
       const items = div("row-items");
 
-      // Horizontal virtual scroll container
       row.items.forEach((ch, c) => {
         const card = div("card");
         card._r = r; card._c = c;
@@ -145,7 +121,6 @@ const App = (() => {
           card.appendChild(img);
         } else card.textContent = ch.name;
 
-        // CLICK -> PLAY + FULLSCREEN TOGGLE
         card.addEventListener("click", () => {
           play(getFlatIndex(r,c));
           toggleFullScreen();
@@ -163,9 +138,6 @@ const App = (() => {
     S.dom.rows.appendChild(frag);
   }
 
-  /* =========================
-     FOCUS + SCROLL
-  ========================= */
   function setFocus() {
     document.querySelectorAll(".card.active").forEach(e=>e.classList.remove("active"));
 
@@ -207,53 +179,62 @@ const App = (() => {
     return S.flat.indexOf(row.items[c]);
   }
 
-  /* =========================
-     FULLSCREEN TOGGLE
-  ========================= */
   function toggleFullScreen() {
     S.isFullscreen = !S.isFullscreen;
-    if(S.isFullscreen){
-      S.dom.ui.style.display = "none";
-    } else {
-      S.dom.ui.style.display = "block";
+    S.dom.ui.style.display = S.isFullscreen ? "none" : "block";
+
+    if(S.fallbackVideo){
+      if(!document.fullscreenElement) S.fallbackVideo.requestFullscreen?.();
+      else document.exitFullscreen?.();
     }
   }
 
-  /* =========================
-     AVPLAY PLAYER
-  ========================= */
   function play(index) {
     const ch = S.flat[index];
-    if(!ch || !S.player) return;
+    if(!ch) return;
 
     S.currentIndex = index;
     S.isFullscreen = true;
     S.dom.ui.style.display = "none";
 
-    try { S.player.stop(); S.player.close(); } catch(e){}
-
-    try {
-      S.player.open(ch.url);
-      S.player.setDisplayRect(0,0,1920,1080);
-      S.player.setStreamingProperty("BUFFERING_TIME", CONFIG.BUFFER);
-      S.player.prepareAsync(()=>S.player.play(), err=>console.error(err));
-      prebufferNext(index);
-    } catch(e){ console.error("AVPlay play error",e);}
+    // Use AVPlay if available
+    if(S.player){
+      try { S.player.stop(); S.player.close(); } catch(e){}
+      try {
+        S.player.open(ch.url);
+        S.player.setDisplayRect(0,0,1920,1080);
+        S.player.setStreamingProperty("BUFFERING_TIME", CONFIG.BUFFER);
+        S.player.prepareAsync(()=>S.player.play(), err=>console.error(err));
+        prebufferNext(index);
+      } catch(e){ console.error("AVPlay play error",e);}
+    } else {
+      // Fallback for browser
+      if(!S.fallbackVideo){
+        S.fallbackVideo = document.createElement("video");
+        S.fallbackVideo.autoplay = true;
+        S.fallbackVideo.controls = false;
+        S.fallbackVideo.playsInline = true;
+        S.fallbackVideo.style.width = "100%";
+        S.fallbackVideo.style.height = "100%";
+        S.fallbackVideo.style.background = "black";
+        S.dom.player.appendChild(S.fallbackVideo);
+      }
+      S.fallbackVideo.src = ch.url;
+      S.fallbackVideo.play().catch(e => console.warn("Fallback video play error:", e));
+    }
   }
 
   function stopPlayer() {
-    try { S.player.stop(); S.player.close(); } catch(e){}
+    if(S.player) try { S.player.stop(); S.player.close(); } catch(e){}
+    if(S.fallbackVideo) S.fallbackVideo.pause();
     S.isFullscreen = false;
     S.dom.ui.style.display = "block";
   }
 
-  /* =========================
-     PRE-BUFFER NEXT CHANNEL
-  ========================= */
   function prebufferNext(index){
     const nextIndex = (index+1) % S.flat.length;
     const nextCh = S.flat[nextIndex];
-    if(!nextCh) return;
+    if(!nextCh || !S.player) return;
 
     try {
       if(S.prebufferIndex!==nextIndex){
@@ -266,9 +247,6 @@ const App = (() => {
     } catch{}
   }
 
-  /* =========================
-     ZAPPING
-  ========================= */
   function zap(dir){
     let i = S.currentIndex + dir;
     if(i <0) i=S.flat.length-1;
@@ -276,9 +254,6 @@ const App = (() => {
     play(i);
   }
 
-  /* =========================
-     REMOTE INPUT
-  ========================= */
   function onKey(e){
     if(S.isFullscreen){
       switch(e.key){
@@ -308,18 +283,12 @@ const App = (() => {
     setFocus();
   }
 
-  /* =========================
-     FOCUS CLAMP
-  ========================= */
   function clampFocus(){
     S.focusRow = Math.max(0, Math.min(S.focusRow,S.rows.length-1));
     const max = S.rows[S.focusRow].items.length-1;
     S.focusCol = Math.max(0, Math.min(S.focusCol,max));
   }
 
-  /* =========================
-     HELPER DIV
-  ========================= */
   function div(cls, txt){
     const d=document.createElement("div");
     if(cls)d.className=cls;
@@ -327,9 +296,6 @@ const App = (() => {
     return d;
   }
 
-  /* =========================
-     SEARCH + PLAYLIST PROMPT
-  ========================= */
   function searchPrompt(){
     const q = prompt("Search channel:");
     if(!q) return;
@@ -349,9 +315,6 @@ const App = (() => {
     location.reload();
   }
 
-  /* =========================
-     START
-  ========================= */
   window.addEventListener("keydown", onKey);
 
   return { init };
