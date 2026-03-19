@@ -4,8 +4,9 @@ let currentFocus = null;
 
 const videoContainer = document.getElementById("video");
 const ui = document.getElementById("ui");
+const overlay = document.getElementById("overlay");
 
-// ===================== LOAD =====================
+// ================= LOAD =================
 async function loadChannels() {
   ui.innerHTML = "Loading channels...";
 
@@ -17,7 +18,7 @@ async function loadChannels() {
     );
     text = await res.text();
   } catch (e) {
-    console.log("Fetch failed, fallback used");
+    console.log("Fetch failed");
   }
 
   if (text) {
@@ -29,7 +30,8 @@ async function loadChannels() {
       {
         name: "Test Stream",
         group: "Test",
-        url: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
+        url: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
+        logo: ""
       }
     ];
   }
@@ -38,29 +40,33 @@ async function loadChannels() {
   render();
 }
 
-// ===================== PARSE =====================
+// ================= PARSE =================
 function parseM3U(text) {
   const lines = text.split("\n");
   const res = [];
 
-  let name = "", group = "Other";
+  let name = "", group = "Other", logo = "";
 
   for (let line of lines) {
     if (line.startsWith("#EXTINF")) {
+
       name = line.split(",").pop();
 
       const g = line.match(/group-title="(.*?)"/);
       group = g ? g[1] : "Other";
-    } 
-    else if (line.startsWith("http")) {
-      res.push({ name, group, url: line.trim() });
+
+      const l = line.match(/tvg-logo="(.*?)"/);
+      logo = l ? l[1] : "";
+
+    } else if (line.startsWith("http")) {
+      res.push({ name, group, url: line.trim(), logo });
     }
   }
 
-  return res.slice(0, 100);
+  return res.slice(0, 120);
 }
 
-// ===================== CATEGORY =====================
+// ================= CATEGORY =================
 function buildCategories() {
   categories = {};
 
@@ -72,51 +78,61 @@ function buildCategories() {
   });
 }
 
-// ===================== RENDER =====================
+// ================= RENDER =================
 function render() {
   ui.innerHTML = "";
 
-  Object.keys(categories).forEach(group => {
-    const row = document.createElement("div");
-    row.className = "row";
+  Object.keys(categories)
+    .sort((a, b) => a.localeCompare(b))
+    .forEach(group => {
 
-    const title = document.createElement("div");
-    title.className = "row-title";
-    title.innerText = group;
+      const row = document.createElement("div");
+      row.className = "row";
 
-    const items = document.createElement("div");
-    items.className = "row-items";
+      const title = document.createElement("div");
+      title.className = "row-title";
+      title.innerText = group;
 
-    categories[group].forEach(ch => {
-      const card = document.createElement("div");
-      card.className = "card";
-      card.tabIndex = 0;
-      card.innerText = ch.name;
+      const items = document.createElement("div");
+      items.className = "row-items";
 
-      card.onclick = () => play(ch);
+      categories[group].forEach(ch => {
 
-      card.onfocus = () => {
-        currentFocus = card;
-      };
+        const card = document.createElement("div");
+        card.className = "card";
+        card.tabIndex = 0;
 
-      items.appendChild(card);
+        if (ch.logo) {
+          const img = document.createElement("img");
+          img.src = ch.logo;
+          card.appendChild(img);
+        } else {
+          card.innerText = ch.name;
+        }
+
+        card.onclick = () => play(ch);
+        card.onfocus = () => currentFocus = card;
+
+        items.appendChild(card);
+      });
+
+      row.appendChild(title);
+      row.appendChild(items);
+      ui.appendChild(row);
     });
 
-    row.appendChild(title);
-    row.appendChild(items);
-    ui.appendChild(row);
-  });
-
-  // Auto focus first card
   setTimeout(() => {
     const first = document.querySelector(".card");
     if (first) first.focus();
   }, 300);
 }
 
-// ===================== PLAY =====================
+// ================= PLAY =================
 function play(ch) {
-  console.log("Playing:", ch.name);
+  overlay.innerText = ch.name;
+  overlay.style.opacity = 1;
+
+  setTimeout(() => overlay.style.opacity = 0, 3000);
 
   ui.style.display = "none";
 
@@ -127,7 +143,7 @@ function play(ch) {
   }
 }
 
-// ===================== AVPLAY =====================
+// ================= AVPLAY =================
 function playAV(url) {
   try {
     webapis.avplay.stop();
@@ -140,12 +156,11 @@ function playAV(url) {
       webapis.avplay.play();
     });
   } catch (e) {
-    console.log("AVPlay failed, fallback");
     playHTML5(url);
   }
 }
 
-// ===================== HTML5 =====================
+// ================= HTML5 =================
 function playHTML5(url) {
   videoContainer.innerHTML = "";
 
@@ -157,15 +172,15 @@ function playHTML5(url) {
   video.style.width = "100%";
   video.style.height = "100%";
 
-  video.onerror = () => {
-    alert("Stream not supported");
-  };
+  video.onerror = () => alert("Stream not supported");
 
   videoContainer.appendChild(video);
 }
 
-// ===================== REMOTE =====================
+// ================= REMOTE =================
 document.addEventListener("keydown", e => {
+
+  const focus = document.activeElement;
 
   if (e.key === "Enter" && currentFocus) {
     currentFocus.click();
@@ -176,7 +191,27 @@ document.addEventListener("keydown", e => {
     videoContainer.innerHTML = "";
   }
 
-});
+  if (!focus.classList.contains("card")) return;
 
-// ===================== INIT =====================
+  if (e.key === "ArrowRight") {
+    focus.nextElementSibling?.focus();
+  }
+
+  if (e.key === "ArrowLeft") {
+    focus.previousElementSibling?.focus();
+  }
+
+  if (e.key === "ArrowDown") {
+    focus.closest(".row")?.nextElementSibling
+      ?.querySelector(".card")?.focus();
+  }
+
+  if (e.key === "ArrowUp") {
+    focus.closest(".row")?.previousElementSibling
+      ?.querySelector(".card")?.focus();
+  }
+
+});
+  
+// ================= INIT =================
 loadChannels();
