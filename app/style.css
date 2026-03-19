@@ -6,6 +6,7 @@ body {
   overflow: hidden;
 }
 
+/* VIDEO */
 #video {
   position: fixed;
   inset: 0;
@@ -13,12 +14,14 @@ body {
   z-index: 1;
 }
 
+/* UI */
 #ui {
   position: relative;
   z-index: 5;
   padding: 60px;
 }
 
+/* ROWS */
 .row {
   margin-bottom: 40px;
 }
@@ -29,12 +32,15 @@ body {
   color: #aaa;
 }
 
+/* HORIZONTAL SCROLL */
 .row-items {
   display: flex;
   gap: 20px;
   overflow-x: auto;
+  scroll-behavior: smooth;
 }
 
+/* CARD */
 .card {
   min-width: 220px;
   height: 130px;
@@ -46,8 +52,27 @@ body {
   cursor: pointer;
 }
 
+.card img {
+  max-width: 80%;
+  max-height: 80%;
+}
+
 .card:focus {
   outline: none;
   transform: scale(1.2);
   box-shadow: 0 0 20px white;
+}
+
+/* OVERLAY */
+#overlay {
+  position: fixed;
+  bottom: 50px;
+  left: 60px;
+  font-size: 26px;
+  background: rgba(0,0,0,0.6);
+  padding: 10px 15px;
+  border-radius: 8px;
+  opacity: 0;
+  transition: opacity 0.3s;
+  z-index: 10;
 }
