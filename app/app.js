@@ -20,19 +20,16 @@ const App = (() => {
     player: document.getElementById("player")
   };
 
-  /* INIT */
   async function init() {
 
     try { S.player = webapis.avplay; } catch {}
 
-    // HTML5 fallback
     S.video = document.createElement("video");
     S.video.style.width = "100%";
     S.video.style.height = "100%";
     S.video.autoplay = true;
     DOM.player.appendChild(S.video);
 
-    // Load playlist
     let playlist = localStorage.getItem("custom_playlist")
       ? JSON.parse(localStorage.getItem("custom_playlist"))
       : DEFAULT_PLAYLIST;
@@ -58,7 +55,6 @@ const App = (() => {
     document.addEventListener("keydown", onKey);
   }
 
-  /* PARSE */
   function parse(txt) {
     const lines = txt.split("\n");
     let res = [], meta = {};
@@ -83,7 +79,6 @@ const App = (() => {
     return res;
   }
 
-  /* GROUP + SORT */
   function group(channels) {
     const map = {};
 
@@ -100,11 +95,11 @@ const App = (() => {
     }));
   }
 
-  /* RENDER */
   function render() {
     DOM.rows.innerHTML = "";
 
     S.rows.forEach((row, r) => {
+
       const rowEl = div("row");
       const title = div("row-title", row.title);
       const items = div("row-items");
@@ -113,6 +108,25 @@ const App = (() => {
 
         const card = document.createElement("div");
         card.className = "card";
+        card.setAttribute("tabindex", "0");
+
+        // ✅ CLICK FIX
+        card.onclick = () => {
+          S.focusRow = r;
+          S.focusCol = c;
+          focus();
+          play();
+        };
+
+        // ✅ REMOTE FIX
+        card.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") {
+            S.focusRow = r;
+            S.focusCol = c;
+            focus();
+            play();
+          }
+        });
 
         if (ch.logo) {
           const img = document.createElement("img");
@@ -135,7 +149,6 @@ const App = (() => {
     });
   }
 
-  /* FOCUS */
   function focus() {
     document.querySelectorAll(".card").forEach(e => e.classList.remove("active"));
 
@@ -147,6 +160,7 @@ const App = (() => {
     if (!card) return;
 
     card.classList.add("active");
+    card.focus();
 
     if (!S.offset[S.focusRow]) S.offset[S.focusRow] = 0;
 
@@ -168,17 +182,25 @@ const App = (() => {
     setTimeout(()=>DOM.overlay.style.opacity=0,1500);
   }
 
-  /* PLAY */
   function play() {
 
-    const ch = S.rows[S.focusRow].items[S.focusCol];
-    const index = S.flat.indexOf(ch);
-    S.currentIndex = index;
+    const row = S.rows[S.focusRow];
+    if (!row) return;
+
+    const ch = row.items[S.focusCol];
+    if (!ch || !ch.url) return;
+
+    S.currentIndex = S.flat.indexOf(ch);
 
     showOverlay("Loading: " + ch.name);
 
-    if (playAV(ch.url)) return;
-    playHTML5(ch.url);
+    const url = ch.url.toLowerCase();
+
+    if (url.includes(".m3u8")) {
+      if (!playAV(ch.url)) playHTML5(ch.url);
+    } else {
+      playHTML5(ch.url);
+    }
   }
 
   function playAV(url) {
@@ -192,14 +214,9 @@ const App = (() => {
 
     try {
       S.player.open(url);
-
       S.player.setDisplayRect(0,0,1920,1080);
-      S.player.setStreamingProperty("BUFFERING_TIME","200");
-      S.player.setStreamingProperty("ADAPTIVE_INFO","FIXED_MAX_RESOLUTION=1920X1080");
 
-      let fallback = setTimeout(()=>{
-        playHTML5(url);
-      },6000);
+      let fallback = setTimeout(()=>playHTML5(url),6000);
 
       S.player.prepareAsync(()=>{
         clearTimeout(fallback);
@@ -234,13 +251,10 @@ const App = (() => {
     document.body.classList.remove("fullscreen");
   }
 
-  /* NAV */
   function onKey(e) {
 
     if (S.playing) {
       if (e.key === "Return") stop();
-      if (e.key === "ChannelUp") zap(1);
-      if (e.key === "ChannelDown") zap(-1);
       return;
     }
 
@@ -254,20 +268,6 @@ const App = (() => {
 
     clamp();
     focus();
-  }
-
-  function zap(dir){
-    let i = S.currentIndex + dir;
-    if(i<0) i=S.flat.length-1;
-    if(i>=S.flat.length) i=0;
-
-    const ch = S.flat[i];
-
-    S.focusRow = S.rows.findIndex(r=>r.items.includes(ch));
-    S.focusCol = S.rows[S.focusRow].items.indexOf(ch);
-
-    focus();
-    play();
   }
 
   function clamp(){
