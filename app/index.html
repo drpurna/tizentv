@@ -3,16 +3,54 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <!-- Allow caching for faster loading -->
+  <meta http-equiv="Cache-Control" content="max-age=86400, public">
+  <meta http-equiv="Expires" content="+1 day">
+  
   <title>IPTV</title>
   <link rel="stylesheet" href="./style.css" />
+  
+  <script>
+    // Version management with local storage caching
+    const urlParams = new URLSearchParams(window.location.search);
+    const APP_VERSION = urlParams.get('v') || '1.0.2';
+    const STORAGE_VERSION_KEY = 'iptv_version';
+    const STORAGE_DATA_KEY = 'iptv_data';
+    
+    // Check if this is a new version
+    const storedVersion = localStorage.getItem(STORAGE_VERSION_KEY);
+    const isNewVersion = storedVersion !== APP_VERSION;
+    
+    if (isNewVersion) {
+      console.log(`🔄 New version detected: ${storedVersion} → ${APP_VERSION}`);
+      console.log('Clearing old cached data...');
+      
+      // Only clear on version change
+      localStorage.removeItem(STORAGE_DATA_KEY);
+      localStorage.setItem(STORAGE_VERSION_KEY, APP_VERSION);
+      localStorage.setItem('iptv_last_update', Date.now());
+      
+      console.log('✅ Cache cleared for new version');
+    } else {
+      console.log(`✅ Using cached version v${APP_VERSION}`);
+      const lastUpdate = localStorage.getItem('iptv_last_update');
+      if (lastUpdate) {
+        console.log(`📅 Last update: ${new Date(parseInt(lastUpdate)).toLocaleString()}`);
+      }
+    }
+    
+    // Store version info globally
+    window.APP_VERSION = APP_VERSION;
+    window.IS_NEW_VERSION = isNewVersion;
+  </script>
 </head>
 <body>
   <div class="app">
-
     <aside class="sidebar" id="sidebar">
       <div class="brand">
         <span class="brand-title">IPTV</span>
-        <span class="brand-ver">v1.0.2</span>
+        <span class="brand-ver">v<span id="appVersion"></span></span>
       </div>
 
       <div class="row">
@@ -58,11 +96,27 @@
         &#9632;Red URL &nbsp;|&nbsp; &#9632;Green Reload &nbsp;|&nbsp; &#9632;Yellow Search &nbsp;|&nbsp; &#9632;Blue Default playlist
       </div>
     </main>
-
   </div>
 
-  <!-- HLS.js from app directory (local) -->
   <script src="./hls.min.js"></script>
   <script src="./app.js"></script>
+  <script>
+    // Display version
+    const versionSpan = document.getElementById('appVersion');
+    if (versionSpan) versionSpan.textContent = window.APP_VERSION;
+    
+    // Show update notification if new version
+    if (window.IS_NEW_VERSION) {
+      const statusEl = document.getElementById('statusText');
+      if (statusEl) {
+        statusEl.textContent = `Updated to v${window.APP_VERSION}!`;
+        setTimeout(() => {
+          if (statusEl.textContent.includes('Updated')) {
+            statusEl.textContent = 'Ready';
+          }
+        }, 3000);
+      }
+    }
+  </script>
 </body>
 </html>
