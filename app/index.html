@@ -3,44 +3,20 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  
-  <!-- Allow caching for faster loading -->
-  <meta http-equiv="Cache-Control" content="max-age=86400, public">
-  <meta http-equiv="Expires" content="+1 day">
-  
   <title>IPTV</title>
   <link rel="stylesheet" href="./style.css" />
-  
   <script>
-    // Version management with local storage caching
-    const urlParams = new URLSearchParams(window.location.search);
-    const APP_VERSION = urlParams.get('v') || '1.0.2';
+    // Simple version tracking
+    const APP_VERSION = '1.0.2';
     const STORAGE_VERSION_KEY = 'iptv_version';
-    const STORAGE_DATA_KEY = 'iptv_data';
-    
-    // Check if this is a new version
     const storedVersion = localStorage.getItem(STORAGE_VERSION_KEY);
     const isNewVersion = storedVersion !== APP_VERSION;
-    
     if (isNewVersion) {
-      console.log(`🔄 New version detected: ${storedVersion} → ${APP_VERSION}`);
-      console.log('Clearing old cached data...');
-      
-      // Only clear on version change
-      localStorage.removeItem(STORAGE_DATA_KEY);
       localStorage.setItem(STORAGE_VERSION_KEY, APP_VERSION);
-      localStorage.setItem('iptv_last_update', Date.now());
-      
-      console.log('✅ Cache cleared for new version');
-    } else {
-      console.log(`✅ Using cached version v${APP_VERSION}`);
-      const lastUpdate = localStorage.getItem('iptv_last_update');
-      if (lastUpdate) {
-        console.log(`📅 Last update: ${new Date(parseInt(lastUpdate)).toLocaleString()}`);
-      }
+      localStorage.removeItem('iptv_channels');
+      localStorage.removeItem('iptv_playlist_url');
+      console.log('Cache cleared for new version');
     }
-    
-    // Store version info globally
     window.APP_VERSION = APP_VERSION;
     window.IS_NEW_VERSION = isNewVersion;
   </script>
@@ -52,35 +28,28 @@
         <span class="brand-title">IPTV</span>
         <span class="brand-ver">v<span id="appVersion"></span></span>
       </div>
-
       <div class="row">
         <label class="lbl">PLAYLIST URL</label>
         <input id="playlistUrl" type="text" placeholder="Paste M3U URL..." spellcheck="false" autocomplete="off" />
       </div>
       <div class="row row-btns">
-        <button id="loadBtn">&#8635; Load</button>
+        <button id="loadBtn">⟳ Load</button>
         <button id="defaultBtn" class="btn-sec">Telugu</button>
       </div>
       <div class="row">
         <label class="lbl">SEARCH</label>
         <input id="searchInput" type="text" placeholder="Filter channels..." spellcheck="false" autocomplete="off" />
       </div>
-
       <div class="list-head">
         <span class="lbl">CHANNELS</span>
         <span id="countBadge">0</span>
       </div>
       <ul id="channelList"></ul>
-
       <div class="hint-bar">
-        <span>&#8593;&#8595; nav</span>
-        <span>&#8629; play</span>
-        <span>&#8592;&#8594; focus</span>
-        <span>Esc back</span>
-        <span>2&#10004; fullscreen</span>
+        <span>↑↓ nav</span> <span>↵ play</span> <span>←→ focus</span>
+        <span>Esc back</span> <span>2✖ fullscreen</span>
       </div>
     </aside>
-
     <main class="player-area" id="playerArea">
       <div class="player-header">
         <div class="np-info">
@@ -93,30 +62,14 @@
         <video id="video" autoplay playsinline webkit-playsinline></video>
       </div>
       <div class="help">
-        &#9632;Red URL &nbsp;|&nbsp; &#9632;Green Reload &nbsp;|&nbsp; &#9632;Yellow Search &nbsp;|&nbsp; &#9632;Blue Default playlist
+        ■Red URL &nbsp;|&nbsp; ■Green Reload &nbsp;|&nbsp; ■Yellow Search &nbsp;|&nbsp; ■Blue Default
       </div>
     </main>
   </div>
-
   <script src="./hls.min.js"></script>
   <script src="./app.js"></script>
   <script>
-    // Display version
-    const versionSpan = document.getElementById('appVersion');
-    if (versionSpan) versionSpan.textContent = window.APP_VERSION;
-    
-    // Show update notification if new version
-    if (window.IS_NEW_VERSION) {
-      const statusEl = document.getElementById('statusText');
-      if (statusEl) {
-        statusEl.textContent = `Updated to v${window.APP_VERSION}!`;
-        setTimeout(() => {
-          if (statusEl.textContent.includes('Updated')) {
-            statusEl.textContent = 'Ready';
-          }
-        }, 3000);
-      }
-    }
+    document.getElementById('appVersion').textContent = window.APP_VERSION;
   </script>
 </body>
 </html>
