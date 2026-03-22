@@ -4,64 +4,77 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>IPTV</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800;900&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
-  <div class="app">
+  <div class="app" id="app">
 
+    <!-- SIDEBAR: channel list -->
     <aside class="sidebar" id="sidebar">
       <div class="brand">
         <span class="brand-title">IPTV</span>
-        <span class="brand-ver">v1.0.2</span>
+        <span class="brand-ver">PRO</span>
       </div>
 
-      <div class="row">
-        <label class="lbl">PLAYLIST URL</label>
-        <input id="playlistUrl" type="text" placeholder="Paste M3U URL..." spellcheck="false" autocomplete="off" />
+      <!-- Search only (no URL input) -->
+      <div class="search-wrap">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input id="searchInput" type="text" placeholder="Search channels..." spellcheck="false" autocomplete="off" />
       </div>
-      <div class="row row-btns">
-        <button id="loadBtn">&#8635; Load</button>
-        <button id="defaultBtn" class="btn-sec">Telugu</button>
-      </div>
-      <div class="row">
-        <label class="lbl">SEARCH</label>
-        <input id="searchInput" type="text" placeholder="Filter channels..." spellcheck="false" autocomplete="off" />
+
+      <!-- Playlist tabs -->
+      <div class="tab-bar" id="tabBar">
+        <button class="tab active" data-idx="0">Telugu</button>
+        <button class="tab" data-idx="1">India</button>
+        <button class="tab" data-idx="2">Sports</button>
+        <button class="tab" data-idx="3">Movies</button>
       </div>
 
       <div class="list-head">
         <span class="lbl">CHANNELS</span>
         <span id="countBadge">0</span>
       </div>
+
       <ul id="channelList"></ul>
 
+      <!-- Color button legend -->
       <div class="hint-bar">
-        <span>&#8593;&#8595; nav</span>
-        <span>&#8629; play</span>
-        <span>&#8592;&#8594; focus</span>
-        <span>Esc back</span>
-        <span>2&#10004; fullscreen</span>
+        <span class="hint-item"><span class="dot red"></span>Reload</span>
+        <span class="hint-item"><span class="dot green"></span>Playlist</span>
+        <span class="hint-item"><span class="dot yellow"></span>Search</span>
+        <span class="hint-item"><span class="dot blue"></span>Fullscreen</span>
       </div>
     </aside>
 
+    <!-- MAIN: side preview player -->
     <main class="player-area" id="playerArea">
       <div class="player-header">
         <div class="np-info">
-          <h2 id="nowPlaying">No channel selected</h2>
+          <h2 id="nowPlaying">Select a channel</h2>
           <span id="nowGroup"></span>
         </div>
-        <span id="statusText">Idle</span>
+        <span id="statusBadge" class="status-badge idle">IDLE</span>
       </div>
+
       <div class="video-wrap" id="videoWrap">
         <video id="video" autoplay playsinline webkit-playsinline></video>
+        <div class="video-overlay" id="videoOverlay">
+          <div class="overlay-icon">▶</div>
+          <p class="overlay-hint">Select a channel to play<br><span>Press ENTER for fullscreen</span></p>
+        </div>
+        <!-- Fullscreen exit hint (shown only in fullscreen) -->
+        <div class="fs-hint" id="fsHint">Press BACK or ← to exit fullscreen</div>
       </div>
-      <div class="help">
-        &#9632;Red URL &nbsp;|&nbsp; &#9632;Green Reload &nbsp;|&nbsp; &#9632;Yellow Search &nbsp;|&nbsp; &#9632;Blue Default playlist
-      </div>
+
+      <!-- Loading bar -->
+      <div class="load-bar" id="loadBar"></div>
     </main>
 
   </div>
 
-  <!-- HLS.js from app directory (local) -->
   <script src="./hls.min.js"></script>
   <script src="./app.js"></script>
 </body>
