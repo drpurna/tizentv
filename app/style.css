@@ -1,4 +1,4 @@
-/* === IPTV v1.0.2 — Grey/White Monochrome === */
+/* === IPTV v1.0.1 — Grey/White Monochrome === */
 :root {
   --bg:     #111111;
   --panel:  #1c1c1c;
@@ -20,7 +20,6 @@ body {
   overflow: hidden;
 }
 
-/* ── Layout ── */
 .app {
   display: grid;
   grid-template-columns: 400px 1fr;
@@ -28,7 +27,6 @@ body {
   width: 100vw;
 }
 
-/* ── Sidebar ── */
 .sidebar {
   background: var(--panel);
   border-right: 2px solid var(--border);
@@ -69,7 +67,6 @@ body {
 }
 
 .row { margin-bottom: 10px; }
-
 .row-btns {
   display: flex;
   gap: 8px;
@@ -121,7 +118,6 @@ button:hover, button:focus {
   border-color: var(--hi);
 }
 
-/* ── Channel list ── */
 .list-head {
   display: flex;
   align-items: center;
@@ -160,10 +156,15 @@ button:hover, button:focus {
   background: var(--active);
 }
 #channelList li.active {
+  background: #ffffff;        /* white background */
   border-color: var(--hi);
-  background: var(--active);
 }
-#channelList li.active .ch-name { color: #fff; }
+#channelList li.active .ch-name {
+  color: #111111;             /* dark text for contrast */
+}
+#channelList li.active .meta {
+  color: #555555;             /* slightly lighter grey for metadata */
+}
 .ch-name {
   font-size: 14px;
   font-weight: 600;
@@ -181,7 +182,6 @@ button:hover, button:focus {
   text-overflow: ellipsis;
 }
 
-/* ── Hint bar ── */
 .hint-bar {
   display: flex;
   flex-wrap: wrap;
@@ -194,7 +194,6 @@ button:hover, button:focus {
   flex-shrink: 0;
 }
 
-/* ── Player ── */
 .player-area {
   display: flex;
   flex-direction: column;
@@ -261,7 +260,6 @@ video {
   flex-shrink: 0;
 }
 
-/* ── Fullscreen override ── */
 body.fullscreen .sidebar { display: none; }
 body.fullscreen .app { grid-template-columns: 1fr; }
 body.fullscreen .video-wrap {
@@ -273,6 +271,5 @@ body.fullscreen .video-wrap {
   border: none;
 }
 
-/* No outline flash on TV */
 * { outline: none; }
 button:focus, input:focus { outline: 2px solid var(--hi); outline-offset: 1px; }
