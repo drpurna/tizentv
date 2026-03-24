@@ -1,8 +1,5 @@
 // ================================================================
-// IPTV — app.js v7.0  |  Shaka Player edition
-// ================================================================
-//  • Replaced HLS.js with Shaka Player for HLS/DASH playback
-//  • Maintains all original features (preview, virtual scroll, etc.)
+// IPTV — app.js v7.1  |  Shaka + splash + default cover
 // ================================================================
 
 (function checkShaka(){
@@ -13,7 +10,7 @@
   }
 })();
 
-/* DOM elements (unchanged) */
+/* DOM elements */
 const searchInput   = document.getElementById('searchInput');
 const searchWrap    = document.getElementById('searchWrap');
 const tabBar        = document.getElementById('tabBar');
@@ -30,8 +27,9 @@ const loadBar       = document.getElementById('loadBar');
 const chDialer      = document.getElementById('chDialer');
 const chDialerNum   = document.getElementById('chDialerNum');
 const arBtn         = document.getElementById('arBtn');
+const splashScreen  = document.getElementById('splashScreen'); // new
 
-/* Playlists (unchanged) */
+/* Playlists */
 const PLAYLISTS = [
   { name:'Telugu', url:'https://iptv-org.github.io/iptv/languages/tel.m3u' },
   { name:'India',  url:'https://iptv-org.github.io/iptv/countries/in.m3u'  },
@@ -40,7 +38,7 @@ const FAV_IDX      = 2;
 const FAV_KEY      = 'iptv:favs';
 const PLAYLIST_KEY = 'iptv:lastPl';
 
-/* Shaka Player configuration */
+/* Shaka config (unchanged) */
 const SHAKA_CFG = {
   streaming: {
     bufferingGoal: 30,
@@ -69,14 +67,14 @@ const SHAKA_CFG = {
   }
 };
 
-/* Aspect ratio modes */
+/* Aspect ratio modes — set default to cover (index 2) */
 const AR_MODES = [
   { cls:'',         label:'Fit'  },
   { cls:'ar-fill',  label:'Fill' },
-  { cls:'ar-cover', label:'Crop' },
+  { cls:'ar-cover', label:'Crop' }, // default
   { cls:'ar-wide',  label:'Wide' },
 ];
-let arIdx = 0;
+let arIdx = 2; // ← default to CROP
 
 /* State */
 let channels      = [];
@@ -95,7 +93,7 @@ const PREVIEW_DELAY = 700;
 let dialBuffer    = '';
 let dialTimer     = null;
 
-/* Favourites */
+/* Favourites (unchanged) */
 let favSet = new Set();
 (function(){
   try{ const r=localStorage.getItem(FAV_KEY); if(r) favSet=new Set(JSON.parse(r)); }catch(e){}
@@ -136,7 +134,7 @@ function finishLoadBar(){
   setTimeout(()=>{ loadBar.classList.remove('active'); loadBar.style.width='0%'; },400);
 }
 
-/* Clean name */
+/* Clean name, parseM3U, esc, initials (unchanged) */
 function cleanName(raw){
   return raw
     .replace(/\s*[\[(][^\]*)]*[\])]/g, '')
@@ -145,8 +143,6 @@ function cleanName(raw){
     .replace(/\s{2,}/g,' ')
     .trim();
 }
-
-/* M3U parser */
 function parseM3U(text){
   const lines=text.split(/\r?\n/); const out=[]; let meta=null;
   for(const raw of lines){
@@ -163,7 +159,6 @@ function parseM3U(text){
   }
   return out;
 }
-
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function initials(n){ return n.replace(/[^a-zA-Z0-9]/g,' ').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase()||'?'; }
 
@@ -173,7 +168,6 @@ const VS = {
   OVERSCAN: 6,
   c:null, inner:null, vh:0, st:0, total:0,
   rs:-1, re:-1, nodes:[], raf:null,
-
   init(el){
     this.c=el;
     this.inner=document.createElement('div');
@@ -189,7 +183,6 @@ const VS = {
       });
     },{passive:true});
   },
-
   setData(n){
     this.total=n; this.rs=-1; this.re=-1;
     this.inner.textContent='';
@@ -199,7 +192,6 @@ const VS = {
     this.vh=this.c.clientHeight||700;
     this._paint();
   },
-
   scrollToIndex(idx){
     const top=idx*this.ITEM_H, bot=top+this.ITEM_H, vh=this.vh, st=this.c.scrollTop;
     if(top<st)         this.c.scrollTop=top;
@@ -207,7 +199,6 @@ const VS = {
     this.st=this.c.scrollTop;
     this._paint();
   },
-
   _paint(){
     if(!this.total) return;
     const H=this.ITEM_H, os=this.OVERSCAN;
@@ -215,12 +206,10 @@ const VS = {
     const end=Math.min(this.total-1,Math.ceil((this.st+this.vh)/H)+os);
     if(start===this.rs&&end===this.re) return;
     this.rs=start; this.re=end;
-
     this.nodes=this.nodes.filter(nd=>{
       if(nd._i<start||nd._i>end){ this.inner.removeChild(nd); return false; }
       return true;
     });
-
     const have=new Set(this.nodes.map(n=>n._i));
     const frag=document.createDocumentFragment();
     for(let i=start;i<=end;i++){
@@ -228,7 +217,6 @@ const VS = {
     }
     if(frag.childNodes.length) this.inner.appendChild(frag);
     this.nodes=[...this.inner.children];
-
     const sel=selectedIndex;
     for(const nd of this.nodes){
       const on=nd._i===sel;
@@ -240,38 +228,31 @@ const VS = {
       }
     }
   },
-
   _build(i){
     const ch=filtered[i];
     const li=document.createElement('li');
     li._i=i; li._on=false;
     li.style.cssText='position:absolute;top:'+(i*this.ITEM_H)+'px;left:0;right:0;height:'+this.ITEM_H+'px;';
-
     const ini=esc(initials(ch.name));
     const logo=ch.logo
       ? '<div class="ch-logo"><img src="'+esc(ch.logo)+'" alt="" loading="lazy"'
         +' onerror="this.style.display=\'none\';this.nextSibling.style.display=\'flex\'"'
         +' onload="this.nextSibling.style.display=\'none\'"><span class="ch-logo-fb" style="display:none">'+ini+'</span></div>'
       : '<div class="ch-logo"><span class="ch-logo-fb">'+ini+'</span></div>';
-
     li.innerHTML=logo
       +'<div class="ch-info"><div class="ch-name">'+esc(ch.name)+'</div></div>'
       +(isFav(ch)?'<span class="ch-fav">★</span>':'')
       +'<div class="ch-num">'+(i+1)+'</div>';
-
     li._nm=li.querySelector('.ch-name');
     li._nu=li.querySelector('.ch-num');
-
     if(i===selectedIndex){
       li._on=true; li.classList.add('active');
       if(li._nm) li._nm.style.color='#000';
       if(li._nu) li._nu.style.color='#999';
     }
-
     li.addEventListener('click',()=>{ selectedIndex=i; VS.refresh(); schedulePreview(); });
     return li;
   },
-
   refresh(){ this.rs=-1; this.re=-1; this._paint(); },
 };
 
@@ -348,7 +329,7 @@ function onLoaded(text){
   setFocus('list');
 }
 
-/* Shaka Player integration */
+/* Shaka integration */
 let previewLock = false;
 
 function cancelPreview(){
@@ -358,9 +339,7 @@ function cancelPreview(){
 
 function destroyPlayer(){
   if(!shakaPlayer) return;
-  try {
-    shakaPlayer.destroy();
-  } catch(e) {}
+  try { shakaPlayer.destroy(); } catch(e) {}
   shakaPlayer = null;
   video.removeAttribute('src');
   video.load();
@@ -379,6 +358,11 @@ function startPreview(idx){
   if(!filtered.length) return;
   const ch=filtered[idx]; if(!ch) return;
 
+  // hide splash screen immediately on first channel selection
+  if(splashScreen && !hasPlayed) {
+    splashScreen.classList.add('hide');
+  }
+
   nowPlayingEl.textContent=ch.name;
   npChNumEl.textContent='CH '+(idx+1);
   videoOverlay.classList.add('hidden');
@@ -392,7 +376,6 @@ function startPreview(idx){
 
   const url=ch.url;
 
-  // If Shaka is not available, fallback to native HLS (Safari)
   if(!window.shaka || !shaka.Player.isBrowserSupported()) {
     if(video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src=url;
@@ -407,24 +390,19 @@ function startPreview(idx){
   try {
     shakaPlayer = new shaka.Player(video);
     shakaPlayer.configure(SHAKA_CFG);
-
     shakaPlayer.addEventListener('error', (event) => {
-      const error = event.detail;
-      console.error('Shaka error', error);
+      console.error('Shaka error', event.detail);
       setStatus('Stream error','error');
       finishLoadBar();
     });
-
     shakaPlayer.addEventListener('manifestparsed', () => {
       video.play().catch(()=>{});
     });
-
     shakaPlayer.load(url).catch((err) => {
       console.error('Shaka load error', err);
       setStatus('Load error','error');
       finishLoadBar();
     });
-
   } catch(e) {
     console.error('Shaka init error', e);
     setStatus('Init error','error');
@@ -434,7 +412,7 @@ function startPreview(idx){
 
 function playSelected(){ cancelPreview(); startPreview(selectedIndex); }
 
-/* Aspect ratio */
+/* Aspect ratio — set default cover on start */
 function cycleAR(){
   video.classList.remove('ar-fill','ar-cover','ar-wide');
   arIdx=(arIdx+1)%AR_MODES.length;
@@ -447,7 +425,7 @@ function cycleAR(){
 arBtn.addEventListener('click',cycleAR);
 function setARFocus(on){ arBtn.classList.toggle('focused',on); }
 
-/* Navigation */
+/* Navigation (unchanged) */
 function moveSel(d){
   if(!filtered.length) return;
   cancelPreview();
@@ -495,7 +473,7 @@ function handleDigit(d){
   },1500);
 }
 
-/* Fullscreen */
+/* Fullscreen (unchanged) */
 function showFsHint(){ clearTimeout(fsHintTimer); fsHint.classList.add('visible'); fsHintTimer=setTimeout(()=>fsHint.classList.remove('visible'),3000); }
 function enterFS(){
   const fn=videoWrap.requestFullscreen||videoWrap.webkitRequestFullscreen||videoWrap.mozRequestFullScreen;
@@ -508,13 +486,18 @@ function exitFS(){
   document.body.classList.remove('fullscreen'); isFullscreen=false; fsHint.classList.remove('visible');
 }
 function toggleFS(){ isFullscreen?exitFS():enterFS(); }
-
 document.addEventListener('fullscreenchange',()=>{ isFullscreen=!!(document.fullscreenElement||document.webkitFullscreenElement); if(!isFullscreen){ document.body.classList.remove('fullscreen'); fsHint.classList.remove('visible'); } });
 document.addEventListener('webkitfullscreenchange',()=>{ isFullscreen=!!(document.webkitFullscreenElement||document.fullscreenElement); if(!isFullscreen){ document.body.classList.remove('fullscreen'); fsHint.classList.remove('visible'); } });
 video.addEventListener('dblclick',toggleFS);
 
-/* Video events */
-video.addEventListener('playing',()=>{ setStatus('Playing','playing'); finishLoadBar(); });
+/* Video events — also hide splash if still visible on play */
+video.addEventListener('playing',()=>{ 
+  setStatus('Playing','playing'); 
+  finishLoadBar();
+  if(splashScreen && !splashScreen.classList.contains('hide')) {
+    splashScreen.classList.add('hide');
+  }
+});
 video.addEventListener('pause',  ()=>setStatus('Paused','paused'));
 video.addEventListener('waiting',()=>{ setStatus('Buffering…','loading'); startLoadBar(); });
 video.addEventListener('stalled',()=>setStatus('Buffering…','loading'));
@@ -532,7 +515,7 @@ video.addEventListener('error',  ()=>{ setStatus('Error','error'); finishLoadBar
   }catch(e){}
 })();
 
-/* Keyboard / remote */
+/* Keyboard / remote (unchanged) */
 window.addEventListener('keydown',e=>{
   const k=e.key, c=e.keyCode;
 
@@ -596,10 +579,23 @@ window.addEventListener('keydown',e=>{
   if(k==='ColorF3Blue'  ||c===406){ if(hasPlayed) toggleFS(); e.preventDefault(); return; }
 });
 
-/* Init */
+/* Initialisation */
 (function init(){
   try{ const s=localStorage.getItem(PLAYLIST_KEY); if(s) plIdx=Math.min(parseInt(s,10)||0,PLAYLISTS.length-1); }catch(e){}
   document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',i===plIdx));
   VS.init(channelListEl);
+
+  // Set default aspect ratio to COVER
+  video.classList.add('ar-cover');
+  arBtn.textContent='⛶ Crop'; // match label
+  arBtn.classList.add('ar-cover');
+
   loadPlaylist();
+
+  // Optional: auto‑hide splash after 3 seconds if no channel selected
+  setTimeout(()=>{
+    if(splashScreen && !hasPlayed && !splashScreen.classList.contains('hide')) {
+      splashScreen.classList.add('hide');
+    }
+  }, 3000);
 })();
