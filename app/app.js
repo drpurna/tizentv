@@ -1,21 +1,19 @@
 // ================================================================
-// IPTV — app.js v6.0  |  Samsung TV 2025 / TizenBrew
+// IPTV — app.js v7.0  |  Shaka Player edition
 // ================================================================
-// Changes v6:
-//  • cleanName strips ALL brackets/parens + quality junk completely
-//  • Aspect ratio selectable via remote (Right arrow on player focuses AR btn)
-//  • Preview starts automatically on selection after 700ms debounce
-//  • Fast scroll kills any pending preview — no crash, no stale load
-//  • Remote number dial jumps channel without auto-play (just highlights)
-//  • Press ENTER on dialled number to play
+//  • Replaced HLS.js with Shaka Player for HLS/DASH playback
+//  • Maintains all original features (preview, virtual scroll, etc.)
 // ================================================================
 
-(function checkHLS(){
-  if(window.Hls) console.log('[IPTV] HLS.js',window.Hls.version);
-  else           console.error('[IPTV] HLS.js MISSING');
+(function checkShaka(){
+  if(window.shaka && shaka.Player.isBrowserSupported()) {
+    console.log('[IPTV] Shaka Player ready');
+  } else {
+    console.error('[IPTV] Shaka Player not supported');
+  }
 })();
 
-/* ── DOM ──────────────────────────────────────────────────── */
+/* DOM elements (unchanged) */
 const searchInput   = document.getElementById('searchInput');
 const searchWrap    = document.getElementById('searchWrap');
 const tabBar        = document.getElementById('tabBar');
@@ -33,7 +31,7 @@ const chDialer      = document.getElementById('chDialer');
 const chDialerNum   = document.getElementById('chDialerNum');
 const arBtn         = document.getElementById('arBtn');
 
-/* ── Playlists ───────────────────────────────────────────── */
+/* Playlists (unchanged) */
 const PLAYLISTS = [
   { name:'Telugu', url:'https://iptv-org.github.io/iptv/languages/tel.m3u' },
   { name:'India',  url:'https://iptv-org.github.io/iptv/countries/in.m3u'  },
@@ -42,50 +40,62 @@ const FAV_IDX      = 2;
 const FAV_KEY      = 'iptv:favs';
 const PLAYLIST_KEY = 'iptv:lastPl';
 
-/* ── HLS config ──────────────────────────────────────────── */
-const HLS_CFG = {
-  enableWorker:false, lowLatencyMode:false,
-  backBufferLength:20, maxBufferLength:30, maxMaxBufferLength:60,
-  maxBufferSize:30*1000*1000, maxBufferHole:0.5, nudgeMaxRetry:3,
-  startLevel:-1, abrEwmaDefaultEstimate:1000000,
-  manifestLoadingMaxRetry:3, manifestLoadingRetryDelay:500,
-  levelLoadingMaxRetry:3,    levelLoadingRetryDelay:500,
-  fragLoadingMaxRetry:4,     fragLoadingRetryDelay:500,
-  xhrSetup:function(xhr){ xhr.timeout=12000; },
+/* Shaka Player configuration */
+const SHAKA_CFG = {
+  streaming: {
+    bufferingGoal: 30,
+    rebufferingGoal: 20,
+    bufferBehind: 20,
+    retryParameters: {
+      maxAttempts: 3,
+      baseDelay: 500,
+      backoffFactor: 2,
+      fudgeFactor: 0.5,
+      timeout: 10000
+    }
+  },
+  manifest: {
+    retryParameters: {
+      maxAttempts: 3,
+      baseDelay: 500,
+      backoffFactor: 2,
+      fudgeFactor: 0.5,
+      timeout: 10000
+    }
+  },
+  abr: {
+    defaultBandwidthEstimate: 1000000,
+    enabled: true
+  }
 };
 
-/* ── Aspect ratio modes ──────────────────────────────────── */
+/* Aspect ratio modes */
 const AR_MODES = [
-  { cls:'',         label:'Fit'  },   // letterbox / contain
-  { cls:'ar-fill',  label:'Fill' },   // stretch to fill
-  { cls:'ar-cover', label:'Crop' },   // cover (zoom, crop edges)
-  { cls:'ar-wide',  label:'Wide' },   // 4:3 → 16:9 horizontal stretch
+  { cls:'',         label:'Fit'  },
+  { cls:'ar-fill',  label:'Fill' },
+  { cls:'ar-cover', label:'Crop' },
+  { cls:'ar-wide',  label:'Wide' },
 ];
 let arIdx = 0;
 
-/* ── State ───────────────────────────────────────────────── */
+/* State */
 let channels      = [];
 let allChannels   = [];
 let filtered      = [];
 let selectedIndex = 0;
-// focusArea: 'list' | 'search' | 'ar'
 let focusArea     = 'list';
-let hls           = null;
+let shakaPlayer   = null;
 let plIdx         = 0;
 let isFullscreen  = false;
 let hasPlayed     = false;
 let fsHintTimer   = null;
 let loadBarTimer  = null;
-
-// Preview debounce — fires 700 ms after user stops navigating
 let previewTimer  = null;
-const PREVIEW_DELAY = 700; // ms — fast scrolling won't trigger load
-
-// Number dial
+const PREVIEW_DELAY = 700;
 let dialBuffer    = '';
 let dialTimer     = null;
 
-/* ── Favourites ──────────────────────────────────────────── */
+/* Favourites */
 let favSet = new Set();
 (function(){
   try{ const r=localStorage.getItem(FAV_KEY); if(r) favSet=new Set(JSON.parse(r)); }catch(e){}
@@ -105,7 +115,7 @@ function showFavourites(){
   setStatus(filtered.length?filtered.length+' favourites':'No favourites yet','idle');
 }
 
-/* ── Toast ───────────────────────────────────────────────── */
+/* Toast */
 let toastEl=null,toastTm=null;
 function showToast(msg){
   if(!toastEl){ toastEl=document.createElement('div'); toastEl.id='toast'; document.body.appendChild(toastEl); }
@@ -113,7 +123,7 @@ function showToast(msg){
   clearTimeout(toastTm); toastTm=setTimeout(()=>{ toastEl.style.opacity='0'; },2200);
 }
 
-/* ── Status / load bar ───────────────────────────────────── */
+/* Status / load bar */
 function setStatus(t,c){ statusBadge.textContent=t; statusBadge.className='status-badge '+(c||'idle'); }
 function startLoadBar(){
   clearTimeout(loadBarTimer); loadBar.style.width='0%'; loadBar.classList.add('active');
@@ -126,21 +136,17 @@ function finishLoadBar(){
   setTimeout(()=>{ loadBar.classList.remove('active'); loadBar.style.width='0%'; },400);
 }
 
-/* ── Clean channel name ──────────────────────────────────── */
-// Aggressively strips quality/resolution tags and ALL bracket types
+/* Clean name */
 function cleanName(raw){
   return raw
-    // remove anything inside parentheses or square brackets entirely
     .replace(/\s*[\[(][^\]*)]*[\])]/g, '')
-    // remove standalone quality/resolution words
     .replace(/\b(4K|UHD|FHD|HLS|HEVC|H264|H\.264|SD|HD|576[piP]?|720[piP]?|1080[piP]?|2160[piP]?)\b/gi, '')
-    // remove trailing pipe/dash/dot separators often left behind
     .replace(/[\|\-–—]+\s*$/g, '')
     .replace(/\s{2,}/g,' ')
     .trim();
 }
 
-/* ── M3U parser ──────────────────────────────────────────── */
+/* M3U parser */
 function parseM3U(text){
   const lines=text.split(/\r?\n/); const out=[]; let meta=null;
   for(const raw of lines){
@@ -161,13 +167,9 @@ function parseM3U(text){
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function initials(n){ return n.replace(/[^a-zA-Z0-9]/g,' ').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase()||'?'; }
 
-/* ================================================================
-   VIRTUAL SCROLL ENGINE v3
-   Fragment-based batch insert · RAF-throttled scroll · No CSS
-   transitions on rows (eliminates jank)
-   ================================================================ */
+/* Virtual scroll (unchanged) */
 const VS = {
-  ITEM_H:  80,   // ← MUST match CSS --item-h
+  ITEM_H:  80,
   OVERSCAN: 6,
   c:null, inner:null, vh:0, st:0, total:0,
   rs:-1, re:-1, nodes:[], raf:null,
@@ -273,7 +275,7 @@ const VS = {
   refresh(){ this.rs=-1; this.re=-1; this._paint(); },
 };
 
-/* ── Render list ─────────────────────────────────────────── */
+/* Render list */
 function renderList(){
   countBadge.textContent=filtered.length;
   if(!filtered.length){
@@ -288,7 +290,7 @@ function renderList(){
   VS.scrollToIndex(selectedIndex);
 }
 
-/* ── Search ──────────────────────────────────────────────── */
+/* Search */
 let sdTm=null;
 function applySearch(){
   clearTimeout(sdTm);
@@ -302,7 +304,7 @@ function commitSearch(){ setFocus('list'); if(filtered.length===1){ selectedInde
 function clearSearch(){ searchInput.value=''; applySearch(); setFocus('list'); }
 searchInput.addEventListener('input',applySearch);
 
-/* ── XHR ─────────────────────────────────────────────────── */
+/* XHR */
 function xhrFetch(url,ms,cb){
   let done=false;
   const xhr=new XMLHttpRequest();
@@ -320,7 +322,7 @@ function mirrorUrl(url){
   }catch(e){ return null; }
 }
 
-/* ── Load playlist ───────────────────────────────────────── */
+/* Load playlist */
 function loadPlaylist(urlOv){
   cancelPreview();
   if(plIdx===FAV_IDX&&!urlOv){ showFavourites(); return; }
@@ -346,33 +348,29 @@ function onLoaded(text){
   setFocus('list');
 }
 
-/* ================================================================
-   PREVIEW SYSTEM
-   – schedulePreview() is called on every navigation move
-   – Waits PREVIEW_DELAY ms before starting the stream
-   – cancelPreview() is called on fast scroll to abort cleanly
-   – destroyHLS() fully tears down HLS before starting new stream
-   – Prevents crash: we never start a new stream until the old
-     one is fully destroyed
-   ================================================================ */
-let previewLock = false;  // true while HLS is mid-destroy
+/* Shaka Player integration */
+let previewLock = false;
 
 function cancelPreview(){
   clearTimeout(previewTimer);
   previewTimer=null;
 }
 
-function destroyHLS(){
-  if(!hls) return;
-  try{ hls.destroy(); }catch(e){}
-  hls=null;
+function destroyPlayer(){
+  if(!shakaPlayer) return;
+  try {
+    shakaPlayer.destroy();
+  } catch(e) {}
+  shakaPlayer = null;
+  video.removeAttribute('src');
+  video.load();
 }
 
 function schedulePreview(){
   cancelPreview();
   previewTimer=setTimeout(()=>{
     previewTimer=null;
-    if(previewLock) return;   // safety: don't start while tearing down
+    if(previewLock) return;
     startPreview(selectedIndex);
   }, PREVIEW_DELAY);
 }
@@ -389,42 +387,54 @@ function startPreview(idx){
   startLoadBar();
 
   previewLock=true;
-  destroyHLS();
-  video.removeAttribute('src');
-  video.load();
+  destroyPlayer();
   previewLock=false;
 
   const url=ch.url;
-  const isHLS=/\.m3u8($|\?)/i.test(url)||url.toLowerCase().includes('m3u8');
 
-  try{
-    if(isHLS){
-      if(video.canPlayType('application/vnd.apple.mpegurl')&&!window.Hls){
-        video.src=url; video.play().catch(()=>{}); return;
-      }
-      if(window.Hls&&window.Hls.isSupported()){
-        hls=new window.Hls(HLS_CFG);
-        hls.on(window.Hls.Events.MANIFEST_PARSED,()=>{ video.play().catch(()=>{}); });
-        hls.on(window.Hls.Events.ERROR,(_,d)=>{
-          if(!d.fatal) return;
-          if(d.type===window.Hls.ErrorTypes.NETWORK_ERROR){ setStatus('Net error','error'); hls.startLoad(); }
-          else if(d.type===window.Hls.ErrorTypes.MEDIA_ERROR){ setStatus('Recovering…','loading'); hls.recoverMediaError(); }
-          else{ setStatus('Stream error','error'); finishLoadBar(); destroyHLS(); }
-        });
-        hls.loadSource(url);
-        hls.attachMedia(video);
-        return;
-      }
-      setStatus('HLS unsupported','error'); return;
+  // If Shaka is not available, fallback to native HLS (Safari)
+  if(!window.shaka || !shaka.Player.isBrowserSupported()) {
+    if(video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src=url;
+      video.play().catch(()=>{});
+      finishLoadBar();
+      return;
     }
-    video.src=url; video.play().catch(()=>{});
-  }catch(e){ finishLoadBar(); setStatus('Play error','error'); }
+    setStatus('Unsupported','error');
+    return;
+  }
+
+  try {
+    shakaPlayer = new shaka.Player(video);
+    shakaPlayer.configure(SHAKA_CFG);
+
+    shakaPlayer.addEventListener('error', (event) => {
+      const error = event.detail;
+      console.error('Shaka error', error);
+      setStatus('Stream error','error');
+      finishLoadBar();
+    });
+
+    shakaPlayer.addEventListener('manifestparsed', () => {
+      video.play().catch(()=>{});
+    });
+
+    shakaPlayer.load(url).catch((err) => {
+      console.error('Shaka load error', err);
+      setStatus('Load error','error');
+      finishLoadBar();
+    });
+
+  } catch(e) {
+    console.error('Shaka init error', e);
+    setStatus('Init error','error');
+    finishLoadBar();
+  }
 }
 
-// Keep playSelected as alias (used by ENTER key for immediate play)
 function playSelected(){ cancelPreview(); startPreview(selectedIndex); }
 
-/* ── Aspect ratio ────────────────────────────────────────── */
+/* Aspect ratio */
 function cycleAR(){
   video.classList.remove('ar-fill','ar-cover','ar-wide');
   arIdx=(arIdx+1)%AR_MODES.length;
@@ -435,21 +445,17 @@ function cycleAR(){
   showToast('Aspect: '+m.label);
 }
 arBtn.addEventListener('click',cycleAR);
+function setARFocus(on){ arBtn.classList.toggle('focused',on); }
 
-function setARFocus(on){
-  arBtn.classList.toggle('focused',on);
-}
-
-/* ── Navigation ──────────────────────────────────────────── */
+/* Navigation */
 function moveSel(d){
   if(!filtered.length) return;
-  cancelPreview();   // kill pending preview immediately on move
+  cancelPreview();
   selectedIndex=Math.max(0,Math.min(filtered.length-1,selectedIndex+d));
   VS.scrollToIndex(selectedIndex);
   VS.refresh();
-  schedulePreview(); // restart debounce timer
+  schedulePreview();
 }
-
 function setFocus(a){
   focusArea=a;
   setARFocus(a==='ar');
@@ -457,7 +463,7 @@ function setFocus(a){
   else{ searchWrap.classList.remove('active'); if(document.activeElement===searchInput) searchInput.blur(); }
 }
 
-/* ── Tab switch ──────────────────────────────────────────── */
+/* Tab switch */
 function switchTab(idx){
   plIdx=idx;
   document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',i===idx));
@@ -465,25 +471,22 @@ function switchTab(idx){
 }
 tabBar.querySelectorAll('.tab').forEach((b,i)=>b.addEventListener('click',()=>switchTab(i)));
 
-/* ── Number dial (highlight only, ENTER to play) ─────────── */
+/* Number dial */
 function handleDigit(d){
   clearTimeout(dialTimer);
   dialBuffer+=d;
   chDialerNum.textContent=dialBuffer;
   chDialer.classList.add('visible');
-
   dialTimer=setTimeout(()=>{
     const num=parseInt(dialBuffer,10);
     dialBuffer='';
     chDialer.classList.remove('visible');
     if(!filtered.length) return;
-    // Just highlight the channel — user presses ENTER to play
     const idx=Math.max(0,Math.min(filtered.length-1,num-1));
     cancelPreview();
     selectedIndex=idx;
     VS.scrollToIndex(idx);
     VS.refresh();
-    // Show channel info but don't start stream yet
     const ch=filtered[idx];
     if(ch){
       nowPlayingEl.textContent=ch.name;
@@ -492,7 +495,7 @@ function handleDigit(d){
   },1500);
 }
 
-/* ── Fullscreen ──────────────────────────────────────────── */
+/* Fullscreen */
 function showFsHint(){ clearTimeout(fsHintTimer); fsHint.classList.add('visible'); fsHintTimer=setTimeout(()=>fsHint.classList.remove('visible'),3000); }
 function enterFS(){
   const fn=videoWrap.requestFullscreen||videoWrap.webkitRequestFullscreen||videoWrap.mozRequestFullScreen;
@@ -510,14 +513,14 @@ document.addEventListener('fullscreenchange',()=>{ isFullscreen=!!(document.full
 document.addEventListener('webkitfullscreenchange',()=>{ isFullscreen=!!(document.webkitFullscreenElement||document.fullscreenElement); if(!isFullscreen){ document.body.classList.remove('fullscreen'); fsHint.classList.remove('visible'); } });
 video.addEventListener('dblclick',toggleFS);
 
-/* ── Video events ────────────────────────────────────────── */
+/* Video events */
 video.addEventListener('playing',()=>{ setStatus('Playing','playing'); finishLoadBar(); });
 video.addEventListener('pause',  ()=>setStatus('Paused','paused'));
 video.addEventListener('waiting',()=>{ setStatus('Buffering…','loading'); startLoadBar(); });
 video.addEventListener('stalled',()=>setStatus('Buffering…','loading'));
 video.addEventListener('error',  ()=>{ setStatus('Error','error'); finishLoadBar(); });
 
-/* ── Tizen key registration ──────────────────────────────── */
+/* Tizen key registration */
 (function(){
   try{
     if(window.tizen&&tizen.tvinputdevice){
@@ -529,16 +532,14 @@ video.addEventListener('error',  ()=>{ setStatus('Error','error'); finishLoadBar
   }catch(e){}
 })();
 
-/* ── Keyboard / remote ───────────────────────────────────── */
+/* Keyboard / remote */
 window.addEventListener('keydown',e=>{
   const k=e.key, c=e.keyCode;
 
-  /* digits — highlight channel, don't play yet */
   if((c>=48&&c<=57)||(c>=96&&c<=105)){
     if(focusArea!=='search'){ handleDigit(String(c>=96?c-96:c-48)); e.preventDefault(); return; }
   }
 
-  /* back/escape */
   if(k==='Escape'||k==='Back'||k==='GoBack'||c===10009||c===27){
     if(isFullscreen){ exitFS(); e.preventDefault(); return; }
     if(focusArea==='ar'){ setFocus('list'); e.preventDefault(); return; }
@@ -547,7 +548,6 @@ window.addEventListener('keydown',e=>{
     e.preventDefault(); return;
   }
 
-  /* ── AR focus mode ──────────────────────────────────────── */
   if(focusArea==='ar'){
     if(k==='Enter'||c===13){ cycleAR(); e.preventDefault(); return; }
     if(k==='ArrowLeft'||c===37||k==='ArrowDown'||c===40){ setFocus('list'); e.preventDefault(); return; }
@@ -555,24 +555,20 @@ window.addEventListener('keydown',e=>{
     e.preventDefault(); return;
   }
 
-  /* ── Search mode ────────────────────────────────────────── */
   if(focusArea==='search'){
     if(k==='Enter'||c===13){ commitSearch(); e.preventDefault(); return; }
     if(k==='ArrowDown'||k==='ArrowUp'||c===40||c===38){ commitSearch(); }
     else return;
   }
 
-  /* ── List / normal mode ─────────────────────────────────── */
   if(k==='ArrowUp'   ||c===38){ isFullscreen?showFsHint():moveSel(-1); e.preventDefault(); return; }
   if(k==='ArrowDown' ||c===40){ isFullscreen?showFsHint():moveSel(1);  e.preventDefault(); return; }
   if(k==='ArrowLeft' ||c===37){ isFullscreen?exitFS():setFocus('list'); e.preventDefault(); return; }
   if(k==='ArrowRight'||c===39){
     if(isFullscreen){ showFsHint(); e.preventDefault(); return; }
-    /* Right arrow = focus AR button on player */
     setFocus('ar'); e.preventDefault(); return;
   }
 
-  /* enter = play selected immediately */
   if(k==='Enter'||c===13){
     if(isFullscreen){ exitFS(); e.preventDefault(); return; }
     if(focusArea==='list'){
@@ -585,24 +581,22 @@ window.addEventListener('keydown',e=>{
   if(k==='PageUp')  { moveSel(-10); e.preventDefault(); return; }
   if(k==='PageDown'){ moveSel(10);  e.preventDefault(); return; }
 
-  /* media keys */
   if(k==='MediaPlayPause'  ||c===10252){ video.paused?video.play().catch(()=>{}):video.pause(); e.preventDefault(); return; }
   if(k==='MediaPlay'       ||c===415)  { video.play().catch(()=>{}); e.preventDefault(); return; }
   if(k==='MediaPause'      ||c===19)   { video.pause(); e.preventDefault(); return; }
-  if(k==='MediaStop'       ||c===413)  { cancelPreview(); destroyHLS(); video.pause(); video.removeAttribute('src'); video.load(); setStatus('Stopped','idle'); finishLoadBar(); e.preventDefault(); return; }
+  if(k==='MediaStop'       ||c===413)  { cancelPreview(); destroyPlayer(); video.pause(); video.removeAttribute('src'); video.load(); setStatus('Stopped','idle'); finishLoadBar(); e.preventDefault(); return; }
   if(k==='MediaFastForward'||c===417)  { moveSel(1);  e.preventDefault(); return; }
   if(k==='MediaRewind'     ||c===412)  { moveSel(-1); e.preventDefault(); return; }
   if(k==='ChannelUp'       ||c===427)  { moveSel(1);  e.preventDefault(); return; }
   if(k==='ChannelDown'     ||c===428)  { moveSel(-1); e.preventDefault(); return; }
 
-  /* colour buttons */
   if(k==='ColorF0Red'   ||c===403){ switchTab((plIdx+1)%(PLAYLISTS.length+1)); e.preventDefault(); return; }
   if(k==='ColorF1Green' ||c===404){ if(filtered.length&&focusArea==='list') toggleFav(filtered[selectedIndex]); e.preventDefault(); return; }
   if(k==='ColorF2Yellow'||c===405){ setFocus('search'); e.preventDefault(); return; }
   if(k==='ColorF3Blue'  ||c===406){ if(hasPlayed) toggleFS(); e.preventDefault(); return; }
 });
 
-/* ── Init ────────────────────────────────────────────────── */
+/* Init */
 (function init(){
   try{ const s=localStorage.getItem(PLAYLIST_KEY); if(s) plIdx=Math.min(parseInt(s,10)||0,PLAYLISTS.length-1); }catch(e){}
   document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',i===plIdx));
