@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<widget xmlns="http://www.w3.org/ns/widgets"
+        xmlns:tizen="http://tizen.org/ns/widgets"
+        id="http://iptv.local/app"
+        version="8.0"
+        viewmodes="fullscreen">
+
+  <tizen:application id="IPTVApp.app"
+                     package="IPTVApp"
+                     required_version="6.0"/>
+
+  <!-- Allow ALL external origins — required for JioTV API + M3U playlists -->
+  <access origin="*" subdomains="true"/>
+
+  <!-- Allow navigation to all domains -->
+  <tizen:allow-navigation>*</tizen:allow-navigation>
+
+  <!-- CSP: allow fetch/XHR to any https + jio domains -->
+  <tizen:content-security-policy>
+    default-src * data: blob:;
+    script-src * 'unsafe-inline' 'unsafe-eval';
+    style-src * 'unsafe-inline';
+    connect-src *;
+    media-src *;
+    img-src * data: blob:;
+  </tizen:content-security-policy>
+
+  <tizen:privilege name="http://tizen.org/privilege/internet"/>
+  <tizen:privilege name="http://tizen.org/privilege/network.get"/>
+  <tizen:privilege name="http://tizen.org/privilege/tv.inputdevice"/>
+
+  <content src="index.html"/>
+  <icon src="icon.png"/>
+  <name>IPTV</name>
+
+  <tizen:setting screen-orientation="landscape"
+                 context-menu="disable"
+                 background-support="enable"
+                 encryption="disable"
+                 install-location="auto"
+                 hw-key-event="enable"/>
+</widget>
