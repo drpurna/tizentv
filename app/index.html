@@ -14,15 +14,10 @@
 
     <div class="brand">
       <div class="brand-icon">
-        <!-- Professional broadcast/play SVG icon -->
         <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <!-- Screen/TV shape -->
           <rect x="2" y="5" width="28" height="18" rx="3" fill="white" fill-opacity="0.15" stroke="white" stroke-width="1.5"/>
-          <!-- Play triangle -->
           <path d="M13 11L21 16L13 21V11Z" fill="white"/>
-          <!-- Signal arc left -->
           <path d="M7 26 Q16 28 25 26" stroke="white" stroke-width="1.5" stroke-linecap="round" fill="none"/>
-          <!-- Stand -->
           <line x1="16" y1="23" x2="16" y2="26" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
         </svg>
       </div>
@@ -40,6 +35,7 @@
       <button class="tab active" data-idx="0">Telugu</button>
       <button class="tab"        data-idx="1">India</button>
       <button class="tab fav-tab" data-idx="2">★ Favourites</button>
+      <button class="tab"        data-idx="3">Jio TV</button>   <!-- new tab -->
     </div>
 
     <div class="list-head">
@@ -72,7 +68,6 @@
         <h2 id="nowPlaying">Select a channel</h2>
       </div>
       <div class="player-controls">
-        <!-- Aspect ratio picker -->
         <button class="ar-btn" id="arBtn" title="Aspect Ratio">⛶ Fit</button>
         <span id="statusBadge" class="status-badge idle">IDLE</span>
       </div>
@@ -90,6 +85,23 @@
     <div class="load-bar" id="loadBar"></div>
 
   </main>
+</div>
+
+<!-- Jio TV Login Modal (hidden by default) -->
+<div id="jioModal" class="jio-modal">
+  <div class="jio-modal-content">
+    <h3>Jio TV Login</h3>
+    <div id="jioLoginStep1">
+      <input type="tel" id="jioMobile" placeholder="Mobile number (10 digits)" maxlength="10" pattern="\d*">
+      <button id="jioRequestOtp">Send OTP</button>
+    </div>
+    <div id="jioLoginStep2" style="display:none;">
+      <input type="text" id="jioOtp" placeholder="OTP" maxlength="6">
+      <button id="jioVerifyOtp">Verify</button>
+    </div>
+    <div id="jioStatus"></div>
+    <button id="jioCloseModal">Cancel</button>
+  </div>
 </div>
 
 <script src="./shaka.js"></script>
