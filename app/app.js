@@ -1,23 +1,27 @@
 // ================================================================
-// IPTV — app.js v8.1 | Samsung TV 2025 / TizenBrew
+// IPTV — app.js v8.2 | Samsung TV 2025 / TizenBrew
 // ================================================================
-// v8.1 FIXES:
-// • All API calls use XMLHttpRequest (XHR) NOT fetch()
-//   Tizen blocks fetch() to external origins even with config.xml,
-//   but XHR works correctly when <access origin="*"/> is set.
-// • OTP sendotp: correct body + all required Jio headers
-// • OTP verifyotp: field name OTP (uppercase), getClientConfig
-// • Credentials stored indefinitely in localStorage (iptv:jioCred)
-// • Auto token refresh before expiry; re-login only if refresh fails
-// • Every async path wrapped in try/catch — no unhandled rejections
+// v8.2 — CORS PROXY for JioTV login
+//
+// ROOT CAUSE: Tizen .wgt apps send "Origin: file://" on every request.
+// Jio's server rejects this with CORS error → "network error" in JS.
+// This is a Tizen WebKit limitation — cannot be overridden by JS or config.xml.
+//
+// FIX: Route JioTV API calls through a public CORS proxy.
+// Primary:  https://corsproxy.io/?url=<encoded>
+// Fallback: https://api.allorigins.win/raw?url=<encoded>
+// Both are free, HTTPS, support POST, no signup needed.
+//
+// Channel list and stream URL also go through proxy (same Origin issue).
+// M3U playlists: plain XHR (GET only, no preflight → works without proxy).
 // ================================================================
 
 (function checkShaka(){
   if(window.shaka) console.log('[IPTV] Shaka', shaka.Player.version);
-  else console.error('[IPTV] shaka.js MISSING — playback will not work');
+  else console.error('[IPTV] shaka.js MISSING');
 })();
 
-/* ── DOM refs ─────────────────────────────────────────────── */
+/* ── DOM ──────────────────────────────────────────────────── */
 const searchInput   = document.getElementById('searchInput');
 const searchWrap    = document.getElementById('searchWrap');
 const tabBar        = document.getElementById('tabBar');
@@ -35,7 +39,7 @@ const chDialer      = document.getElementById('chDialer');
 const chDialerNum   = document.getElementById('chDialerNum');
 const arBtn         = document.getElementById('arBtn');
 
-/* ── Playlist config ─────────────────────────────────────── */
+/* ── Playlists ───────────────────────────────────────────── */
 const PLAYLISTS = [
   { name:'Telugu', url:'https://iptv-org.github.io/iptv/languages/tel.m3u' },
   { name:'India',  url:'https://iptv-org.github.io/iptv/countries/in.m3u'  },
@@ -47,14 +51,23 @@ const FAV_KEY      = 'iptv:favs';
 const PLAYLIST_KEY = 'iptv:lastPl';
 const JIO_CRED_KEY = 'iptv:jioCred';
 
-/* ── JioTV API endpoints (exact, from JioTV-Go v3 source) ─── */
+/* ── CORS proxies (tried in order) ──────────────────────── */
+// corsproxy.io: free, HTTPS, supports POST+JSON, 10k req/month
+// allorigins:   free, HTTPS, supports POST, always returns HTTP 200
+const PROXY_LIST = [
+  url => 'https://corsproxy.io/?url=' + encodeURIComponent(url),
+  url => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url),
+];
+let proxyIdx = 0; // tracks which proxy is currently working
+
+/* ── JioTV API endpoints ─────────────────────────────────── */
 const JIO = {
-  SEND_OTP:   'https://tv.media.jio.com/apis/v2.0/loginotp/sendotp',
-  VERIFY_OTP: 'https://tv.media.jio.com/apis/v2.0/loginotp/verifyotp',
-  REFRESH_AT: 'https://auth.media.jio.com/tokenservice/apis/v1/refreshtoken?langId=6',
-  REFRESH_SSO:'https://tv.media.jio.com/apis/v2.0/loginotp/refresh?langId=6',
-  CHANNELS:   'https://jiotv.data.cdn.jio.com/apis/v3.0/getMobileChannelList/get/?os=android&devicetype=phone&usertype=tvYR7NSNn7rymo3F',
-  STREAM:     'https://jiotvapi.media.jio.com/playback/apis/v1.1/geturl?langId=6',
+  SEND_OTP:    'https://tv.media.jio.com/apis/v2.0/loginotp/sendotp',
+  VERIFY_OTP:  'https://tv.media.jio.com/apis/v2.0/loginotp/verifyotp',
+  REFRESH_AT:  'https://auth.media.jio.com/tokenservice/apis/v1/refreshtoken?langId=6',
+  REFRESH_SSO: 'https://tv.media.jio.com/apis/v2.0/loginotp/refresh?langId=6',
+  CHANNELS:    'https://jiotv.data.cdn.jio.com/apis/v3.0/getMobileChannelList/get/?os=android&devicetype=phone&usertype=tvYR7NSNn7rymo3F',
+  STREAM:      'https://jiotvapi.media.jio.com/playback/apis/v1.1/geturl?langId=6',
 };
 
 const JIO_CAT = {
@@ -80,7 +93,7 @@ const AR_MODES=[
   {cls:'',label:'Fit'},{cls:'ar-fill',label:'Fill'},
   {cls:'ar-cover',label:'Crop'},{cls:'ar-wide',label:'Wide'},
 ];
-let arIdx=0, arManuallySet=false;
+let arIdx=0,arManuallySet=false;
 
 /* ── App state ───────────────────────────────────────────── */
 let channels=[],allChannels=[],filtered=[],selectedIndex=0;
@@ -90,22 +103,22 @@ let fsHintTimer=null,loadBarTimer=null,previewTimer=null;
 const PREVIEW_DELAY=700;
 let dialBuffer='',dialTimer=null;
 let jioChannels=[];
-let jioCred=null;  // { ssoToken, accessToken, refreshToken, uniqueId, subscriberId, crm, accessTokenExpiry }
+let jioCred=null;
 
 /* ── Favourites ──────────────────────────────────────────── */
 let favSet=new Set();
-(function(){ try{ const r=localStorage.getItem(FAV_KEY); if(r) favSet=new Set(JSON.parse(r)); }catch(e){} })();
-function saveFavs(){ try{ localStorage.setItem(FAV_KEY,JSON.stringify([...favSet])); }catch(e){} }
-function favKey(ch){ return ch.channelId?'jio:'+ch.channelId:(ch.url||''); }
-function isFav(ch){ return favSet.has(favKey(ch)); }
+(function(){try{const r=localStorage.getItem(FAV_KEY);if(r)favSet=new Set(JSON.parse(r));}catch(e){}})();
+function saveFavs(){try{localStorage.setItem(FAV_KEY,JSON.stringify([...favSet]));}catch(e){}}
+function favKey(ch){return ch.channelId?'jio:'+ch.channelId:(ch.url||'');}
+function isFav(ch){return favSet.has(favKey(ch));}
 function showFavourites(){
   filtered=allChannels.filter(c=>favSet.has(favKey(c)));
-  selectedIndex=0; renderList();
+  selectedIndex=0;renderList();
   setStatus(filtered.length?filtered.length+' favourites':'No favourites yet','idle');
 }
 function toggleFav(ch){
-  const k=favKey(ch); favSet.has(k)?favSet.delete(k):favSet.add(k); saveFavs();
-  if(plIdx===FAV_IDX) showFavourites(); VS.refresh();
+  const k=favKey(ch);favSet.has(k)?favSet.delete(k):favSet.add(k);saveFavs();
+  if(plIdx===FAV_IDX)showFavourites();VS.refresh();
   showToast(isFav(ch)?'\u2605 Added':'\u2715 Removed');
 }
 
@@ -152,61 +165,90 @@ function parseM3U(text){
 }
 
 /* ================================================================
-   CORE XHR WRAPPER
-   Uses XMLHttpRequest — works on Tizen with <access origin="*"/>
-   fetch() is blocked by Tizen for cross-origin even with config.xml
+   CORS PROXY XHR
+   Wraps any Jio API call through a CORS proxy.
+   Automatically retries with next proxy if current one fails.
 ================================================================ */
-function xhrJSON(method, url, headers, body, timeoutMs){
-  return new Promise((resolve,reject)=>{
-    const xhr=new XMLHttpRequest();
-    xhr.timeout=timeoutMs||15000;
-    xhr.open(method,url,true);
-    // Set headers
-    if(headers){
-      Object.keys(headers).forEach(k=>{
-        try{xhr.setRequestHeader(k,headers[k]);}catch(e){}
-      });
-    }
-    xhr.onload=function(){
-      if(xhr.status>=200&&xhr.status<400){
-        try{resolve(JSON.parse(xhr.responseText));}
-        catch(e){resolve({_raw:xhr.responseText});}
-      } else {
-        const err=new Error('HTTP '+xhr.status+': '+xhr.statusText);
-        err.status=xhr.status;
-        err.responseText=xhr.responseText;
-        // Try to parse error body for message
-        try{
-          const j=JSON.parse(xhr.responseText);
-          err.message='HTTP '+xhr.status+': '+(j.message||j.result||j.errorMessage||xhr.statusText);
-          err.jioMsg=j.message||j.result||j.errorMessage||'';
-        }catch(pe){}
-        reject(err);
+function proxyXHR(method, targetUrl, headers, body, timeoutMs){
+  return new Promise((resolve, reject)=>{
+    const attempt = (pIdx, retried)=>{
+      const proxyUrl = PROXY_LIST[pIdx](targetUrl);
+      const xhr = new XMLHttpRequest();
+      xhr.timeout = timeoutMs || 20000;
+      xhr.open(method, proxyUrl, true);
+
+      // Set Content-Type — proxy forwards it to target
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      // x-requested-with tells corsproxy.io to forward the body correctly
+      xhr.setRequestHeader('x-requested-with', 'XMLHttpRequest');
+
+      // Forward Jio auth headers via proxy header passthrough
+      // corsproxy.io supports x-corsproxy-headers for forwarding
+      if(headers){
+        const fwd = Object.keys(headers)
+          .filter(k=>k!=='Content-Type')
+          .map(k=>k+':'+headers[k]).join(',');
+        if(fwd) try{xhr.setRequestHeader('x-cors-headers', fwd);}catch(e){}
       }
+
+      xhr.onload = function(){
+        const raw = xhr.responseText;
+        console.log('[Proxy'+pIdx+']', method, targetUrl.split('/').pop(), '→', xhr.status, raw.slice(0,200));
+        if(xhr.status >= 200 && xhr.status < 400){
+          try{resolve(JSON.parse(raw));}
+          catch(e){resolve({_raw:raw});}
+          return;
+        }
+        // Try next proxy
+        if(!retried && pIdx+1 < PROXY_LIST.length){
+          console.warn('[Proxy] Switching to proxy '+(pIdx+1));
+          proxyIdx = pIdx+1;
+          attempt(pIdx+1, true);
+        } else {
+          const err=new Error('HTTP '+xhr.status);
+          try{const j=JSON.parse(raw);err.message=j.message||j.result||j.errorMessage||('HTTP '+xhr.status);}catch(pe){}
+          reject(err);
+        }
+      };
+      xhr.onerror = function(){
+        console.warn('[Proxy'+pIdx+'] Network error on proxy request');
+        if(!retried && pIdx+1 < PROXY_LIST.length){
+          proxyIdx = pIdx+1;
+          attempt(pIdx+1, true);
+        } else {
+          reject(new Error('All proxies failed — check TV internet connection'));
+        }
+      };
+      xhr.ontimeout = function(){
+        if(!retried && pIdx+1 < PROXY_LIST.length){
+          proxyIdx = pIdx+1;
+          attempt(pIdx+1, true);
+        } else {
+          reject(new Error('Request timed out on all proxies'));
+        }
+      };
+      xhr.send(body ? JSON.stringify(body) : null);
     };
-    xhr.onerror=function(){reject(new Error('Network error — check internet connection'));};
-    xhr.ontimeout=function(){reject(new Error('Request timed out ('+timeoutMs+'ms)'));};
-    xhr.onabort=function(){reject(new Error('Request aborted'));};
-    xhr.send(body||null);
+    attempt(proxyIdx, false);
   });
 }
 
-/* ── Build Jio request headers ───────────────────────────── */
+/* ── Jio auth headers ────────────────────────────────────── */
 function jioHdr(withAuth){
   const h={
-    'Content-Type':    'application/json',
-    'Accept':          'application/json, */*',
-    'os':              'android',
-    'devicetype':      'phone',
-    'versionCode':     '315',
-    'versionName':     '7.0.4',
-    'os_version':      '13',
-    'User-Agent':      'okhttp/4.9.2',
-    'appKey':          'NzNiMDhlYzQyNjJm',
-    'channelPartnerID':'JIOTV',
-    'cId':             'com.jio.media.jiotv',
-    'lId':             '6',
-    'dm':              '1',
+    'Content-Type':     'application/json',
+    'Accept':           'application/json',
+    'os':               'android',
+    'devicetype':       'phone',
+    'versionCode':      '315',
+    'versionName':      '7.0.4',
+    'os_version':       '13',
+    'User-Agent':       'okhttp/4.9.2',
+    'appKey':           'NzNiMDhlYzQyNjJm',
+    'channelPartnerID': 'JIOTV',
+    'cId':              'com.jio.media.jiotv',
+    'lId':              '6',
+    'dm':               '1',
   };
   if(withAuth&&jioCred){
     h['authToken']    = jioCred.accessToken||jioCred.ssoToken||'';
@@ -220,159 +262,123 @@ function jioHdr(withAuth){
 }
 
 /* ================================================================
-   JIO OTP LOGIN
+   JIO TV API — all via CORS proxy
 ================================================================ */
 
-/* Step 1 — Send OTP */
+/* Send OTP */
 function jioSendOTP(mobile){
-  console.log('[Jio] Sending OTP to',mobile);
-  return xhrJSON('POST', JIO.SEND_OTP, jioHdr(false),
-    JSON.stringify({number:mobile, multipleLogin:true, countryCode:91}),
-    20000
+  return proxyXHR('POST', JIO.SEND_OTP, jioHdr(false),
+    {number:mobile, multipleLogin:true, countryCode:91}, 25000
   ).then(data=>{
-    console.log('[Jio] sendOTP response:',JSON.stringify(data));
-    // Success: { OTPId:"...", result:"OTP Sent Successfully" }
+    console.log('[Jio] sendOTP:', JSON.stringify(data));
     if(data.OTPId||data.otpId) return data.OTPId||data.otpId;
-    if(data.result&&(data.result.toLowerCase().includes('sent')||data.result.toLowerCase().includes('success')))
-      return data.OTPId||data.requestId||'__ok__';
-    throw new Error(data.result||data.message||data.errorMessage||'Failed to send OTP');
+    if(data.result&&(data.result+'').toLowerCase().includes('sent')) return data.OTPId||'__ok__';
+    throw new Error(data.result||data.message||data.errorMessage||'OTP send failed — check number');
   });
 }
 
-/* Step 2 — Verify OTP */
+/* Verify OTP */
 function jioVerifyOTP(mobile, otp, otpId){
-  console.log('[Jio] Verifying OTP for',mobile);
   const body={number:mobile, OTP:String(otp), getClientConfig:'true'};
   if(otpId&&otpId!=='__ok__') body.OTPId=otpId;
-  return xhrJSON('POST', JIO.VERIFY_OTP, jioHdr(false),
-    JSON.stringify(body), 20000
-  ).then(data=>{
-    console.log('[Jio] verifyOTP response:',JSON.stringify(data));
-    // JioTV-Go Login struct fields:
-    // ssoToken / authToken / accessToken, uniqueId, subscriberId, crm,
-    // tokenExpiryMinutes, refreshToken
-    const ssoToken    = data.ssoToken   || data.authToken || '';
-    const accessToken = data.authToken  || data.accessToken || ssoToken || '';
-    if(!ssoToken&&!accessToken){
-      throw new Error(data.result||data.message||data.errorMessage||'OTP incorrect — try again');
-    }
+  return proxyXHR('POST', JIO.VERIFY_OTP, jioHdr(false), body, 25000)
+  .then(data=>{
+    console.log('[Jio] verifyOTP:', JSON.stringify(data));
+    const sso = data.ssoToken||data.authToken||'';
+    const acc = data.authToken||data.accessToken||sso||'';
+    if(!sso&&!acc) throw new Error(data.result||data.message||data.errorMessage||'Wrong OTP — try again');
     const expiryMin=parseInt(data.tokenExpiryMinutes||data.tokenExpiry||'60',10)||60;
     return {
-      ssoToken,
-      accessToken,
-      refreshToken:   data.refreshToken||'',
-      uniqueId:       data.uniqueId||data.unique_id||'',
-      subscriberId:   data.subscriberId||data.crm||'',
-      crm:            data.crm||data.subscriberId||'',
+      ssoToken:          sso,
+      accessToken:       acc,
+      refreshToken:      data.refreshToken||'',
+      uniqueId:          data.uniqueId||data.unique_id||'',
+      subscriberId:      data.subscriberId||data.crm||'',
+      crm:               data.crm||data.subscriberId||'',
       accessTokenExpiry: Date.now()+(expiryMin*60000),
     };
   });
 }
 
-/* Token refresh (called automatically before expiry) */
+/* Refresh tokens */
 function jioRefreshTokens(){
   if(!jioCred) return Promise.reject(new Error('No credentials'));
-  // Try accessToken refresh
-  return xhrJSON('POST', JIO.REFRESH_AT, jioHdr(true),
-    JSON.stringify({refreshToken:jioCred.refreshToken||''}), 12000
+  return proxyXHR('POST', JIO.REFRESH_AT, jioHdr(true),
+    {refreshToken:jioCred.refreshToken||''}, 15000
   ).then(data=>{
-    if(data.authToken||data.accessToken){
-      jioCred.accessToken=data.authToken||data.accessToken;
-      jioCred.accessTokenExpiry=Date.now()+(60*60000);
-      jioSaveCred();
-      console.log('[Jio] accessToken refreshed');
-      return;
-    }
-    throw new Error('No token in refresh response');
+    const t=data.authToken||data.accessToken;
+    if(!t) throw new Error('No token in refresh response');
+    jioCred.accessToken=t;
+    jioCred.accessTokenExpiry=Date.now()+(60*60000);
+    jioSaveCred();
   }).catch(e=>{
-    console.warn('[Jio] accessToken refresh failed:',e.message,', trying ssoToken refresh');
-    return xhrJSON('POST', JIO.REFRESH_SSO, jioHdr(true), '{}', 12000)
-      .then(data=>{
-        if(data.ssoToken||data.authToken){
-          jioCred.ssoToken=data.ssoToken||data.authToken;
-          jioCred.accessTokenExpiry=Date.now()+(90*60000);
-          jioSaveCred();
-          console.log('[Jio] ssoToken refreshed');
-          return;
-        }
-        throw new Error('Session expired — please log in again');
-      });
+    console.warn('[Jio] AT refresh failed:',e.message);
+    return proxyXHR('POST', JIO.REFRESH_SSO, jioHdr(true), {}, 15000)
+    .then(data=>{
+      const t=data.ssoToken||data.authToken;
+      if(!t) throw new Error('Session expired — please log in again');
+      jioCred.ssoToken=t;
+      jioCred.accessTokenExpiry=Date.now()+(90*60000);
+      jioSaveCred();
+    });
   });
 }
 
-/* Get stream URL for a channel */
+/* Get stream URL */
 function jioGetStreamUrl(channelId){
-  // Refresh if within 5min of expiry
-  const refreshIfNeeded=
-    (jioCred.accessTokenExpiry&&jioCred.accessTokenExpiry-Date.now()<300000)
-      ? jioRefreshTokens().catch(e=>{ console.warn('[Jio] Pre-refresh:',e.message); })
-      : Promise.resolve();
-
-  return refreshIfNeeded.then(()=>
-    xhrJSON('POST', JIO.STREAM, jioHdr(true),
-      JSON.stringify({channel_id:String(channelId),liveurl:'1'}), 15000
+  const doRefresh=(jioCred.accessTokenExpiry&&jioCred.accessTokenExpiry-Date.now()<300000)
+    ? jioRefreshTokens().catch(()=>{})
+    : Promise.resolve();
+  return doRefresh.then(()=>
+    proxyXHR('POST', JIO.STREAM, jioHdr(true),
+      {channel_id:String(channelId),liveurl:'1'}, 15000
     )
   ).then(data=>{
-    console.log('[Jio] stream response:',JSON.stringify(data));
     const url=data.result||data.url||data.stream_url||data.streamUrl||'';
-    if(!url) throw new Error(data.message||data.errorMessage||'No stream URL returned');
+    if(!url) throw new Error(data.message||data.errorMessage||'No stream URL');
     return url;
   });
 }
 
 /* Load channel list */
 function loadJioChannels(){
-  const doLoad=()=>
-    xhrJSON('GET', JIO.CHANNELS, jioHdr(true), null, 25000)
-    .then(data=>{
-      const list=Array.isArray(data)?data
-                :Array.isArray(data.result)?data.result
-                :Array.isArray(data.channels)?data.channels:[];
-      if(!list.length) throw new Error('Channel list empty');
-      jioChannels=list.map(ch=>({
-        name:      ch.channel_name||ch.channelName||ch.name||'Unknown',
-        logo:      ch.logoUrl||ch.logo_url||ch.logo||'',
-        channelId: String(ch.channel_id||ch.channelId||''),
-        group:     JIO_CAT[ch.channelCategoryId]||JIO_CAT[ch.category_id]||'Jio TV',
-        isHD:      !!(ch.isHD||ch.is_hd),
-        url:       null,
-      })).filter(ch=>ch.channelId);
-      jioChannels.forEach(c=>{if(!allChannels.find(x=>x.channelId===c.channelId))allChannels.push(c);});
-      channels=jioChannels.slice();filtered=channels.slice();selectedIndex=0;
-      finishLoadBar();renderList();setFocus('list');
-      setStatus('Jio TV \u00b7 '+channels.length+' ch','idle');
-      return true;
-    });
-
-  setStatus('Fetching Jio channels\u2026','loading');startLoadBar();
-
-  const refreshIfNeeded=
-    (jioCred&&jioCred.accessTokenExpiry&&jioCred.accessTokenExpiry-Date.now()<300000)
-      ? jioRefreshTokens().catch(()=>{})
-      : Promise.resolve();
-
-  return refreshIfNeeded.then(doLoad).catch(err=>{
-    finishLoadBar();
-    console.error('[Jio] loadJioChannels:',err);
+  setStatus('Loading Jio channels\u2026','loading');startLoadBar();
+  const doRefresh=(jioCred&&jioCred.accessTokenExpiry&&jioCred.accessTokenExpiry-Date.now()<300000)
+    ? jioRefreshTokens().catch(()=>{})
+    : Promise.resolve();
+  return doRefresh.then(()=>
+    proxyXHR('GET', JIO.CHANNELS, jioHdr(true), null, 30000)
+  ).then(data=>{
+    const list=Array.isArray(data)?data:Array.isArray(data.result)?data.result:Array.isArray(data.channels)?data.channels:[];
+    if(!list.length) throw new Error('Channel list empty');
+    jioChannels=list.map(ch=>({
+      name:      ch.channel_name||ch.channelName||ch.name||'Unknown',
+      logo:      ch.logoUrl||ch.logo_url||ch.logo||'',
+      channelId: String(ch.channel_id||ch.channelId||''),
+      group:     JIO_CAT[ch.channelCategoryId]||JIO_CAT[ch.category_id]||'Jio TV',
+      isHD:      !!(ch.isHD||ch.is_hd),
+      url:       null,
+    })).filter(ch=>ch.channelId);
+    jioChannels.forEach(c=>{if(!allChannels.find(x=>x.channelId===c.channelId))allChannels.push(c);});
+    channels=jioChannels.slice();filtered=channels.slice();selectedIndex=0;
+    finishLoadBar();renderList();setFocus('list');
+    setStatus('Jio TV \u00b7 '+channels.length+' ch','idle');
+    return true;
+  }).catch(err=>{
+    finishLoadBar();console.error('[Jio] loadChannels:',err);
     setStatus('Jio error: '+err.message,'error');
     return false;
   });
 }
 
-/* Credential persistence */
-function jioSaveCred(){
-  try{localStorage.setItem(JIO_CRED_KEY,JSON.stringify(jioCred));}catch(e){}
-}
-function jioClearCred(){
-  try{localStorage.removeItem(JIO_CRED_KEY);}catch(e){}
-  jioCred=null;jioChannels=[];
-}
+/* Credential storage — indefinite */
+function jioSaveCred(){try{localStorage.setItem(JIO_CRED_KEY,JSON.stringify(jioCred));}catch(e){}}
+function jioClearCred(){try{localStorage.removeItem(JIO_CRED_KEY);}catch(e){}jioCred=null;jioChannels=[];}
 function jioLoadCred(){
   try{
-    const raw=localStorage.getItem(JIO_CRED_KEY);
-    if(!raw)return null;
+    const raw=localStorage.getItem(JIO_CRED_KEY);if(!raw)return null;
     const c=JSON.parse(raw);
-    if(!c||((!c.ssoToken)&&(!c.accessToken)))return null;
+    if(!c||(!c.ssoToken&&!c.accessToken))return null;
     return c;
   }catch(e){return null;}
 }
@@ -381,23 +387,19 @@ function jioLoadCred(){
 function handleJioTab(){
   if(jioChannels.length){
     channels=jioChannels.slice();filtered=channels.slice();selectedIndex=0;
-    renderList();setStatus('Jio TV \u00b7 '+channels.length+' ch','idle');setFocus('list');
-    return;
+    renderList();setStatus('Jio TV \u00b7 '+channels.length+' ch','idle');setFocus('list');return;
   }
   if(jioCred){
-    loadJioChannels().then(ok=>{if(!ok){jioClearCred();showJioLoginModal();}});
-    return;
+    loadJioChannels().then(ok=>{if(!ok){jioClearCred();showJioLoginModal();}});return;
   }
   showJioLoginModal();
 }
 
-/* ── Init Jio on startup (silent) ─────────────────────────── */
 function initJio(){
   try{
-    const c=jioLoadCred();
-    if(!c)return;
+    const c=jioLoadCred();if(!c)return;
     jioCred=c;
-    if(plIdx===JIO_IDX) loadJioChannels();
+    if(plIdx===JIO_IDX)loadJioChannels();
   }catch(e){console.warn('[Jio] initJio:',e.message);}
 }
 
@@ -488,7 +490,7 @@ function commitSearch(){setFocus('list');if(filtered.length===1){selectedIndex=0
 function clearSearch(){searchInput.value='';applySearch();setFocus('list');}
 searchInput.addEventListener('input',applySearch);
 
-/* ── XHR for M3U playlists ───────────────────────────────── */
+/* ── XHR for M3U (plain, no proxy needed — GET only) ──────── */
 function xhrFetch(url,ms,cb){
   let done=false;const xhr=new XMLHttpRequest();
   const tid=setTimeout(()=>{if(done)return;done=true;xhr.abort();cb(new Error('Timeout'),null);},ms);
@@ -539,7 +541,7 @@ function cycleAR(){
 arBtn.addEventListener('click',cycleAR);
 function setARFocus(on){arBtn.classList.toggle('focused',on);}
 
-/* ── Playback (Shaka) ────────────────────────────────────── */
+/* ── Playback ────────────────────────────────────────────── */
 let previewLock=false;
 function cancelPreview(){clearTimeout(previewTimer);previewTimer=null;}
 async function destroyPlayer(){if(!shakaPlayer)return;try{await shakaPlayer.destroy();}catch(e){}shakaPlayer=null;}
@@ -554,14 +556,12 @@ function startPreview(idx){
     jioGetStreamUrl(ch.channelId)
       .then(url=>doPlayPreview({...ch,url},idx))
       .catch(err=>{
-        if(err.status===401||(err.message&&(err.message.includes('401')||err.message.toLowerCase().includes('token')||err.message.toLowerCase().includes('auth')))){
+        if(err.status===401||/401|token|auth/i.test(err.message)){
           jioRefreshTokens()
             .then(()=>jioGetStreamUrl(ch.channelId))
             .then(url=>doPlayPreview({...ch,url},idx))
-            .catch(e=>{jioClearCred();finishLoadBar();setStatus('Session expired — re-login','error');setTimeout(showJioLoginModal,1500);});
-        } else {
-          finishLoadBar();setStatus('Stream error: '+err.message,'error');
-        }
+            .catch(()=>{jioClearCred();finishLoadBar();setStatus('Session expired — re-login','error');setTimeout(showJioLoginModal,1500);});
+        }else{finishLoadBar();setStatus('Stream error: '+err.message,'error');}
       });
     return;
   }
@@ -581,7 +581,7 @@ async function doPlayPreview(ch,idx){
   if(!window.shaka||!shaka.Player.isBrowserSupported()){setStatus('Shaka unsupported','error');finishLoadBar();return;}
   try{
     shakaPlayer=new shaka.Player();await shakaPlayer.attach(video);shakaPlayer.configure(SHAKA_CFG);
-    shakaPlayer.addEventListener('error',e=>{const err=e.detail;console.error('[Shaka]',err.code,err.message);if(err.severity===shaka.util.Error.Severity.CRITICAL){setStatus('Error '+err.code,'error');finishLoadBar();}else{setStatus('Buffering\u2026','loading');}});
+    shakaPlayer.addEventListener('error',e=>{const err=e.detail;if(err.severity===shaka.util.Error.Severity.CRITICAL){setStatus('Error '+err.code,'error');finishLoadBar();}else{setStatus('Buffering\u2026','loading');}});
     shakaPlayer.addEventListener('buffering',e=>{if(e.buffering){setStatus('Buffering\u2026','loading');startLoadBar();}});
     await shakaPlayer.load(url);video.play().catch(()=>{});
   }catch(e){console.error('[Shaka]',e);finishLoadBar();setStatus('Play error: '+(e.message||'unknown'),'error');}
@@ -618,7 +618,7 @@ window.addEventListener('keydown',e=>{
   const k=e.key,c=e.keyCode;
   if((c>=48&&c<=57)||(c>=96&&c<=105)){if(focusArea!=='search'){handleDigit(String(c>=96?c-96:c-48));e.preventDefault();return;}}
   if(k==='Escape'||k==='Back'||k==='GoBack'||c===10009||c===27){if(isFullscreen){exitFS();e.preventDefault();return;}if(focusArea==='ar'){setFocus('list');e.preventDefault();return;}if(focusArea==='search'){clearSearch();e.preventDefault();return;}try{if(window.tizen)tizen.application.getCurrentApplication().exit();}catch(ex){}e.preventDefault();return;}
-  if(focusArea==='ar'){if(k==='Enter'||c===13){cycleAR();e.preventDefault();return;}if(k==='ArrowLeft'||c===37||k==='ArrowDown'||c===40){setFocus('list');e.preventDefault();return;}if(k==='ArrowRight'||c===39||k==='ArrowUp'||c===38){cycleAR();e.preventDefault();return;}e.preventDefault();return;}
+  if(focusArea==='ar'){if(k==='Enter'||c===13){cycleAR();e.preventDefault();return;}if(k==='ArrowLeft'||c===37||k==='ArrowDown'||c===40){setFocus('list');e.preventDefault();return;}cycleAR();e.preventDefault();return;}
   if(focusArea==='search'){if(k==='Enter'||c===13){commitSearch();e.preventDefault();return;}if(k==='ArrowDown'||k==='ArrowUp'||c===40||c===38){commitSearch();}else return;}
   if(k==='ArrowUp'||c===38){isFullscreen?showFsHint():moveSel(-1);e.preventDefault();return;}
   if(k==='ArrowDown'||c===40){isFullscreen?showFsHint():moveSel(1);e.preventDefault();return;}
@@ -653,35 +653,19 @@ function showJioLoginModal(){
   const verifyBtn=document.getElementById('jioVerifyOtp');
   const resendBtn=document.getElementById('jioResendOtp');
   const closeBtn=document.getElementById('jioCloseModal');
-
   step1.style.display='block';step2.style.display='none';
   statusDiv.innerHTML='';mobileIn.value='';otpIn.value='';
   reqBtn.disabled=false;verifyBtn.disabled=false;
   let otpId='',pendingMobile='';
-
-  function st(msg,type){
-    const color=type==='error'?'#e50000':type==='ok'?'#00c06a':'#f0c400';
-    statusDiv.innerHTML='<span style="color:'+color+'">'+esc(msg)+'</span>';
-  }
-
+  function st(msg,type){const color=type==='error'?'#e50000':type==='ok'?'#00c06a':'#f0c400';statusDiv.innerHTML='<span style="color:'+color+'">'+esc(msg)+'</span>';}
   reqBtn.onclick=function(){
     const mobile=mobileIn.value.replace(/\D/g,'');
     if(mobile.length!==10){st('Enter valid 10-digit mobile number','error');return;}
-    st('Sending OTP\u2026','wait');reqBtn.disabled=true;
+    st('Sending OTP via proxy\u2026','wait');reqBtn.disabled=true;
     jioSendOTP(mobile)
-      .then(id=>{
-        otpId=id;pendingMobile=mobile;
-        st('OTP sent to +91 '+mobile+' \u2014 check your SMS','ok');
-        step1.style.display='none';step2.style.display='block';
-        setTimeout(()=>{try{otpIn.focus();}catch(e){}},150);
-      })
-      .catch(err=>{
-        console.error('[Jio] sendOTP:',err);
-        st('Error: '+err.message,'error');
-        reqBtn.disabled=false;
-      });
+      .then(id=>{otpId=id;pendingMobile=mobile;st('OTP sent to +91 '+mobile,'ok');step1.style.display='none';step2.style.display='block';setTimeout(()=>{try{otpIn.focus();}catch(e){}},150);})
+      .catch(err=>{console.error('[Jio] sendOTP:',err);st('Error: '+err.message,'error');reqBtn.disabled=false;});
   };
-
   verifyBtn.onclick=function(){
     const otp=otpIn.value.replace(/\D/g,'');
     if(otp.length<4){st('Enter the OTP from your SMS','error');return;}
@@ -689,47 +673,23 @@ function showJioLoginModal(){
     jioVerifyOTP(pendingMobile,otp,otpId)
       .then(cred=>{
         jioCred=cred;jioSaveCred();
-        st('\u2713 Login successful! Loading channels\u2026','ok');
-        setTimeout(()=>{
-          modal.style.display='none';
-          loadJioChannels().then(ok=>{if(!ok)showToast('Channel load failed — tap Jio TV again');});
-        },600);
+        st('\u2713 Logged in! Loading channels\u2026','ok');
+        setTimeout(()=>{modal.style.display='none';loadJioChannels().then(ok=>{if(!ok)showToast('Channels failed — tap Jio TV again');});},600);
       })
-      .catch(err=>{
-        console.error('[Jio] verifyOTP:',err);
-        st('Error: '+err.message,'error');
-        verifyBtn.disabled=false;
-      });
+      .catch(err=>{console.error('[Jio] verifyOTP:',err);st('Error: '+err.message,'error');verifyBtn.disabled=false;});
   };
-
-  if(resendBtn){
-    resendBtn.onclick=function(){
-      step2.style.display='none';step1.style.display='block';
-      otpIn.value='';reqBtn.disabled=false;
-      st('Enter your number again to resend OTP','wait');
-    };
-  }
-
-  closeBtn.onclick=function(){
-    modal.style.display='none';
-    if(plIdx===JIO_IDX&&!jioCred)switchTab(0);
-  };
-
+  if(resendBtn){resendBtn.onclick=function(){step2.style.display='none';step1.style.display='block';otpIn.value='';reqBtn.disabled=false;st('Re-enter your number to resend OTP','wait');};}
+  closeBtn.onclick=function(){modal.style.display='none';if(plIdx===JIO_IDX&&!jioCred)switchTab(0);};
   modal.style.display='flex';
   setTimeout(()=>{try{mobileIn.focus();}catch(e){}},150);
 }
 
 /* ── Init ────────────────────────────────────────────────── */
 (function init(){
-  if(window.shaka) shaka.polyfill.installAll();
+  if(window.shaka)shaka.polyfill.installAll();
   try{const s=localStorage.getItem(PLAYLIST_KEY);if(s)plIdx=Math.min(parseInt(s,10)||0,TOTAL_TABS-1);}catch(e){}
   document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',i===plIdx));
   VS.init(channelListEl);
-  if(plIdx===JIO_IDX){
-    initJio();
-    if(!jioCred&&!jioChannels.length) setTimeout(handleJioTab,200);
-  } else {
-    loadPlaylist();
-    initJio();
-  }
+  if(plIdx===JIO_IDX){initJio();if(!jioCred)setTimeout(handleJioTab,200);}
+  else{loadPlaylist();initJio();}
 })();
