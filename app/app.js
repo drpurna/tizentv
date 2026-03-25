@@ -37,12 +37,12 @@ const PLAYLISTS = [
 const FAV_IDX      = 2;
 const FAV_KEY      = 'iptv:favs';
 const PLAYLIST_KEY = 'iptv:lastPl';
-const CACHE_KEY    = 'iptv:playlistCache';   // store parsed channels per URL
+const CACHE_KEY    = 'iptv:playlistCache';
 
 /* Shaka config with aggressive timeout and memory‑friendly buffer */
 const SHAKA_CFG = {
   streaming: {
-    bufferingGoal: 20,          // smaller buffer for faster channel switch
+    bufferingGoal: 20,
     rebufferingGoal: 15,
     bufferBehind: 15,
     retryParameters: {
@@ -50,7 +50,7 @@ const SHAKA_CFG = {
       baseDelay: 500,
       backoffFactor: 2,
       fudgeFactor: 0.5,
-      timeout: 8000              // fail fast on dead streams
+      timeout: 8000
     }
   },
   manifest: {
@@ -93,9 +93,9 @@ let previewTimer  = null;
 const PREVIEW_DELAY = 700;
 let dialBuffer    = '';
 let dialTimer     = null;
-let currentXHR    = null;          // to abort pending playlist requests
+let currentXHR    = null;
 
-/* ========== Favourites (unchanged) ========== */
+/* Favourites */
 let favSet = new Set();
 (function(){
   try{ const r=localStorage.getItem(FAV_KEY); if(r) favSet=new Set(JSON.parse(r)); }catch(e){}
@@ -115,7 +115,7 @@ function showFavourites(){
   setStatus(filtered.length?filtered.length+' favourites':'No favourites yet','idle');
 }
 
-/* ========== Toast ========== */
+/* Toast */
 let toastEl=null,toastTm=null;
 function showToast(msg){
   if(!toastEl){ toastEl=document.createElement('div'); toastEl.id='toast'; document.body.appendChild(toastEl); }
@@ -123,7 +123,7 @@ function showToast(msg){
   clearTimeout(toastTm); toastTm=setTimeout(()=>{ toastEl.style.opacity='0'; },2200);
 }
 
-/* ========== Status & load bar ========== */
+/* Status & load bar */
 function setStatus(t,c){ statusBadge.textContent=t; statusBadge.className='status-badge '+(c||'idle'); }
 function startLoadBar(){
   clearTimeout(loadBarTimer); loadBar.style.width='0%'; loadBar.classList.add('active');
@@ -136,7 +136,7 @@ function finishLoadBar(){
   setTimeout(()=>{ loadBar.classList.remove('active'); loadBar.style.width='0%'; },400);
 }
 
-/* ========== Clean name, M3U parser, helpers ========== */
+/* Clean name, M3U parser, helpers */
 function cleanName(raw){
   return raw
     .replace(/\s*[\[(][^\]*)]*[\])]/g, '')
@@ -164,7 +164,7 @@ function parseM3U(text){
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function initials(n){ return n.replace(/[^a-zA-Z0-9]/g,' ').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase()||'?'; }
 
-/* ========== Virtual scroll (unchanged) ========== */
+/* Virtual scroll */
 const VS = {
   ITEM_H:  80,
   OVERSCAN: 6,
@@ -287,7 +287,7 @@ function commitSearch(){ setFocus('list'); if(filtered.length===1){ selectedInde
 function clearSearch(){ searchInput.value=''; applySearch(); setFocus('list'); }
 searchInput.addEventListener('input',applySearch);
 
-/* ========== XHR with timeout and abort ========== */
+/* XHR with abort and timeout */
 function xhrFetch(url, ms, cb){
   if(currentXHR) {
     currentXHR.abort();
@@ -311,13 +311,13 @@ function mirrorUrl(url){
   }catch(e){ return null; }
 }
 
-/* ========== Playlist loading with cache ========== */
+/* Playlist loading with cache */
 function loadPlaylist(urlOv){
   cancelPreview();
   if(plIdx===FAV_IDX&&!urlOv){ showFavourites(); return; }
   const url=urlOv||PLAYLISTS[plIdx].url;
 
-  // Check cache first
+  // Check cache
   const cached = localStorage.getItem(CACHE_KEY+'_'+url);
   if(cached) {
     try {
@@ -346,14 +346,12 @@ function loadPlaylist(urlOv){
 function onLoaded(text,url){
   try {
     const newChannels = parseM3U(text);
-    // Merge new channels into allChannels (avoid duplicates)
     const seen=new Set(allChannels.map(c=>c.url));
     newChannels.forEach(c=>{ if(!seen.has(c.url)) allChannels.push(c); });
     channels = newChannels;
     filtered = channels.slice();
     selectedIndex = 0;
     renderList();
-    // Cache the parsed channels for this URL
     try {
       localStorage.setItem(CACHE_KEY+'_'+url, JSON.stringify({ channels: newChannels }));
     } catch(e) {}
@@ -366,7 +364,7 @@ function onLoaded(text,url){
   }
 }
 
-/* ========== Shaka Player with buffer cleanup ========== */
+/* Shaka Player with buffer cleanup */
 let previewLock = false;
 
 function cancelPreview(){
@@ -377,13 +375,12 @@ function cancelPreview(){
 function destroyPlayer(){
   if(!shakaPlayer) return;
   try {
-    shakaPlayer.destroy();               // clean up shaka resources
+    shakaPlayer.destroy();
   } catch(e) {}
   shakaPlayer = null;
-  // Force buffer cleanup
   video.pause();
   video.removeAttribute('src');
-  video.load();                         // clears any lingering buffer
+  video.load();
   video.currentTime = 0;
 }
 
@@ -400,7 +397,6 @@ function startPreview(idx){
   if(!filtered.length) return;
   const ch=filtered[idx]; if(!ch) return;
 
-  // Hide splash
   if(splashScreen && !hasPlayed) splashScreen.classList.add('hide');
 
   nowPlayingEl.textContent=ch.name;
@@ -411,12 +407,11 @@ function startPreview(idx){
   startLoadBar();
 
   previewLock=true;
-  destroyPlayer();                     // ← releases previous buffer
+  destroyPlayer();
   previewLock=false;
 
   const url=ch.url;
 
-  // Fallback to native HLS (Safari) if Shaka not supported
   if(!window.shaka || !shaka.Player.isBrowserSupported()) {
     if(video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src=url;
@@ -431,17 +426,14 @@ function startPreview(idx){
   try {
     shakaPlayer = new shaka.Player(video);
     shakaPlayer.configure(SHAKA_CFG);
-    // Error handling: no fatal crash, just show message
     shakaPlayer.addEventListener('error', (event) => {
-      const error = event.detail;
-      console.error('Shaka error', error);
+      console.error('Shaka error', event.detail);
       setStatus('Stream error','error');
       finishLoadBar();
     });
     shakaPlayer.addEventListener('manifestparsed', () => {
       video.play().catch(()=>{});
     });
-    // Timeout for loading – if manifest load takes too long, abort
     const loadTimeout = setTimeout(() => {
       if(shakaPlayer) {
         shakaPlayer.destroy().catch(()=>{});
@@ -556,21 +548,19 @@ video.addEventListener('waiting',()=>{ setStatus('Buffering…','loading'); star
 video.addEventListener('stalled',()=>setStatus('Buffering…','loading'));
 video.addEventListener('error',  ()=>{ setStatus('Error','error'); finishLoadBar(); });
 
-/* ========== Global error catcher (prevents crashes) ========== */
+/* Global error catcher */
 window.addEventListener('error', (event) => {
   console.error('[Global error]', event.error);
-  // Optional: show a small toast but don't crash
   showToast('App error: ' + (event.error?.message || 'unknown'));
-  event.preventDefault(); // prevents default error popup in some environments
+  event.preventDefault();
 });
-
 window.addEventListener('unhandledrejection', (event) => {
   console.error('[Unhandled promise rejection]', event.reason);
   showToast('Promise error: ' + (event.reason?.message || 'unknown'));
   event.preventDefault();
 });
 
-/* ========== Tizen key registration ========== */
+/* Tizen key registration */
 (function(){
   try{
     if(window.tizen&&tizen.tvinputdevice){
@@ -582,7 +572,7 @@ window.addEventListener('unhandledrejection', (event) => {
   }catch(e){}
 })();
 
-/* Keyboard / remote (unchanged) */
+/* Keyboard / remote */
 window.addEventListener('keydown',e=>{
   const k=e.key, c=e.keyCode;
 
@@ -652,14 +642,12 @@ window.addEventListener('keydown',e=>{
   document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',i===plIdx));
   VS.init(channelListEl);
 
-  // Set default aspect ratio to COVER
   video.classList.add('ar-cover');
   arBtn.textContent='⛶ Crop';
   arBtn.classList.add('ar-cover');
 
   loadPlaylist();
 
-  // Auto‑hide splash after 3 secs if no channel selected
   setTimeout(()=>{
     if(splashScreen && !hasPlayed && !splashScreen.classList.contains('hide')) {
       splashScreen.classList.add('hide');
