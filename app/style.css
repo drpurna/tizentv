@@ -1,6 +1,8 @@
 /* ================================================================
-   IPTV — style.css v8.2  |  Fixed logo fallback + larger font
+   IPTV — style.css v6.0  |  Samsung TV 2025 / TizenBrew
    ================================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap');
 
 :root {
   --bg:        #080808;
@@ -13,11 +15,10 @@
   --gold:      #f0c400;
   --radius:    10px;
   --sidebar-w: 440px;
-  --item-h:    80px;
-  /* system fonts only (no external) */
-  --font-brand: 'SamsungSharpSans-Bold', 'Arial Black', 'Helvetica Neue', Arial, sans-serif;
-  --font-title: 'SamsungSharpSans-Bold', 'Arial Black', 'Helvetica Neue', Arial, sans-serif;
-  --font-body:  'SamsungOne', 'Samsung One', Arial, sans-serif;
+  --item-h:    80px;    /* MUST match VS.ITEM_H in app.js */
+  --font-brand: 'Bebas Neue','Arial Black',Arial,sans-serif;
+  --font-title: 'SamsungSharpSans-Bold','Samsung Sharp Sans','Arial Black',Arial,sans-serif;
+  --font-body:  'SamsungOne','Samsung One',Arial,sans-serif;
 }
 
 *,*::before,*::after {
@@ -29,9 +30,10 @@ html,body {
   width:100%; height:100%; overflow:hidden;
   background:var(--bg); color:var(--text);
   font-family:var(--font-body); font-size:16px;
-  transform:translateZ(0);
+  transform:translateZ(0); -webkit-transform:translateZ(0);
 }
 
+/* ── Layout ──────────────────────────────────────────────── */
 .app {
   display:grid;
   grid-template-columns:var(--sidebar-w) 1fr;
@@ -39,58 +41,49 @@ html,body {
   contain:strict;
 }
 
-/* Sidebar */
+/* ── Sidebar ─────────────────────────────────────────────── */
 .sidebar {
   background:var(--panel);
   border-right:1px solid var(--border);
   display:flex; flex-direction:column;
   overflow:hidden; padding:22px 0 0;
-  contain:layout style;
+  contain:layout style; position:relative;
 }
 
-/* Brand with logo sized to text */
+/* ── Brand ───────────────────────────────────────────────── */
 .brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 0 22px 18px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 16px;
+  display:flex; align-items:center; gap:12px;
+  padding:0 22px 18px;
+  border-bottom:1px solid var(--border);
+  margin-bottom:16px;
 }
-.brand-icon {
-  height: 1em;
-  width: auto;
-  font-size: 42px;
-  color: var(--accent);
-  flex-shrink: 0;
-}
+.brand-play { font-size:20px; color:var(--accent); line-height:1; }
 .brand-title {
-  font-family: var(--font-brand);
-  font-size: 42px;
-  font-weight: 800;
-  letter-spacing: 2px;
-  color: #fff;
-  text-transform: uppercase;
-  line-height: 1;
+  font-family:var(--font-brand);
+  font-size:52px; font-weight:400;
+  letter-spacing:8px; color:#fff;
+  text-transform:uppercase; line-height:1;
+  -webkit-text-stroke:1.5px #fff;
 }
 
-/* Search */
+/* ── Search ──────────────────────────────────────────────── */
 .search-wrap { position:relative; padding:0 16px 14px; }
 .search-icon {
   position:absolute; left:28px; top:50%;
   transform:translateY(-50%);
-  width:18px; height:18px; color:var(--muted);
+  width:18px; height:18px; color:var(--muted); pointer-events:none;
 }
 #searchInput {
   width:100%; height:46px; border-radius:10px;
   border:1px solid var(--border); background:var(--panel2);
   color:var(--text); padding:0 14px 0 44px;
-  font-size:16px; outline:none;
+  font-size:16px; font-family:var(--font-body); outline:none;
 }
 #searchInput:focus { border-color:#333; background:#181818; }
+#searchInput::placeholder { color:var(--muted); }
 .search-wrap.active #searchInput { border-color:var(--accent); }
 
-/* Tabs */
+/* ── Tabs ────────────────────────────────────────────────── */
 .tab-bar {
   display:flex; gap:8px; padding:0 16px 14px;
   overflow-x:auto; scrollbar-width:none;
@@ -112,6 +105,7 @@ html,body {
 .tab.fav-tab:hover  { border-color:#665800; color:var(--gold); }
 .tab.fav-tab.active { background:var(--gold); color:#000; border-color:var(--gold); }
 
+/* ── List header ─────────────────────────────────────────── */
 .list-head {
   display:flex; align-items:center; justify-content:space-between;
   padding:0 16px 10px;
@@ -123,26 +117,28 @@ html,body {
   border-radius:10px; padding:2px 10px;
 }
 
-/* Channel list (virtual scroll) */
+/* ── Channel list ────────────────────────────────────────── */
 #channelList {
   list-style:none; flex:1;
   overflow-y:scroll; overflow-x:hidden;
   padding:0 8px;
   scrollbar-width:none;
   will-change:scroll-position;
-  transform:translateZ(0);
-  contain:strict;
-  position:relative;
+  transform:translateZ(0); -webkit-transform:translateZ(0);
+  contain:strict; position:relative;
+  -webkit-overflow-scrolling:touch;
 }
 #channelList::-webkit-scrollbar { display:none; }
 #vsInner { position:relative; width:100%; }
 
+/* Channel row — height MUST equal VS.ITEM_H = 80px */
 #channelList li {
   display:flex; align-items:center; gap:14px;
   padding:0 14px; border-radius:10px;
   cursor:pointer; border:1px solid transparent;
-  height:var(--item-h);
+  height:var(--item-h);  /* 80px */
   contain:layout style;
+  /* NO transition — prevents jank during virtual scroll */
 }
 #channelList li:hover  { background:var(--panel2); }
 #channelList li.active { background:#fff; border-color:#fff; }
@@ -150,31 +146,34 @@ html,body {
 #channelList li.active .ch-num  { color:#aaa; }
 #channelList li.active .ch-fav  { color:#b08800; }
 
+/* Logo */
 .ch-logo {
   flex-shrink:0; width:46px; height:46px; border-radius:8px;
   background:#1a1a1a; border:1px solid #222;
   display:flex; align-items:center; justify-content:center;
-  overflow:hidden;
+  overflow:hidden; contain:strict;
 }
 .ch-logo img { width:100%; height:100%; object-fit:contain; }
 .ch-logo-fb { font-family:var(--font-title); font-size:14px; font-weight:800; color:#333; text-transform:uppercase; }
 
+/* Channel name — BIG for 10ft TV viewing */
 .ch-info { flex:1; min-width:0; }
 .ch-name {
   font-family:var(--font-title);
-  font-size: 28px;      /* increased from 24px */
+  font-size:24px;   /* large, readable from couch */
   font-weight:700;
   color:var(--text);
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-  line-height:1.2;
+  line-height:1; letter-spacing:0.2px;
 }
+
 .ch-fav { font-size:16px; color:var(--gold); flex-shrink:0; margin-right:2px; }
 .ch-num {
   font-family:var(--font-title); font-size:13px; font-weight:700;
   color:#282828; flex-shrink:0; min-width:32px; text-align:right;
 }
 
-/* Dialer */
+/* ── Number dialer ───────────────────────────────────────── */
 .ch-dialer {
   position:absolute; bottom:72px; left:50%;
   transform:translateX(-50%);
@@ -188,6 +187,7 @@ html,body {
   color:#fff; letter-spacing:10px; text-align:center;
 }
 
+/* ── Hint bar ────────────────────────────────────────────── */
 .hint-bar {
   display:flex; gap:12px; flex-wrap:wrap;
   padding:12px 18px; border-top:1px solid var(--border); flex-shrink:0;
@@ -202,11 +202,11 @@ html,body {
 .dot.yellow { background:#e5b400; }
 .dot.blue   { background:#0052e5; }
 
-/* Player area */
+/* ── Player area ─────────────────────────────────────────── */
 .player-area {
   display:flex; flex-direction:column;
   padding:20px 22px 14px; gap:10px;
-  background:var(--bg); overflow:hidden;
+  background:var(--bg); overflow:hidden; contain:layout style;
 }
 .player-header {
   display:flex; justify-content:space-between; align-items:flex-start; flex-shrink:0;
@@ -215,7 +215,7 @@ html,body {
 .np-ch-num {
   font-family:var(--font-title); font-size:11px; font-weight:700;
   letter-spacing:2px; color:var(--accent);
-  text-transform:uppercase; margin-bottom:4px;
+  text-transform:uppercase; margin-bottom:4px; min-height:15px;
 }
 .np-info h2 {
   font-family:var(--font-brand); font-size:42px; font-weight:400;
@@ -223,9 +223,13 @@ html,body {
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   max-width:700px; text-transform:uppercase; line-height:1.05;
 }
+
+/* Player controls (AR btn + status) */
 .player-controls {
   display:flex; align-items:center; gap:10px; flex-shrink:0; margin-left:16px;
 }
+
+/* Aspect ratio button — visible focus state for remote */
 .ar-btn {
   height:38px; padding:0 18px;
   border-radius:10px; border:1.5px solid #282828;
@@ -243,7 +247,11 @@ html,body {
 .ar-btn.ar-fill  { border-color:#e50000; color:#e50000; }
 .ar-btn.ar-cover { border-color:#00b259; color:#00b259; }
 .ar-btn.ar-wide  { border-color:#e5b400; color:#e5b400; }
+.ar-btn.ar-fill.focused,
+.ar-btn.ar-cover.focused,
+.ar-btn.ar-wide.focused  { box-shadow:0 0 0 2px #fff; }
 
+/* Status badge */
 .status-badge {
   font-family:var(--font-title); font-size:12px; font-weight:700;
   letter-spacing:2px; text-transform:uppercase;
@@ -255,11 +263,11 @@ html,body {
 .status-badge.paused  { color:#555;    border-color:#2a2a2a; }
 .status-badge.error   { color:var(--accent); border-color:#e5000e44; background:#e5000e11; }
 
-/* Video wrap */
+/* ── Video ───────────────────────────────────────────────── */
 .video-wrap {
   flex:1; position:relative; background:#000;
   border-radius:var(--radius); overflow:hidden; border:1px solid var(--border);
-  transform:translateZ(0);
+  transform:translateZ(0); -webkit-transform:translateZ(0);
 }
 video {
   width:100%; height:100%; display:block;
@@ -269,54 +277,16 @@ video.ar-fill  { object-fit:fill; }
 video.ar-cover { object-fit:cover; }
 video.ar-wide  { object-fit:contain; transform:scaleX(1.34); }
 
-/* Splash screen */
-.splash-screen {
-  position:absolute; inset:0;
-  background:rgba(0,0,0,0.92);
-  display:flex; flex-direction:column;
-  align-items:center; justify-content:center;
-  gap:20px;
-  z-index:20;
-  transition:opacity 0.4s ease, visibility 0s;
-  opacity:1; visibility:visible;
-  backdrop-filter:blur(4px);
-  pointer-events:none;
-}
-.splash-screen.hide {
-  opacity:0;
-  visibility:hidden;
-  transition:opacity 0.4s ease, visibility 0s 0.4s;
-}
-.splash-icon {
-  width:100px; height:100px;
-  color:#fff;
-  stroke-width:1.5;
-}
-.splash-text {
-  font-family:var(--font-brand);
-  font-size:48px;
-  font-weight:800;
-  letter-spacing:4px;
-  color:#fff;
-  text-transform:uppercase;
-}
-.splash-sub {
-  font-family:var(--font-body);
-  font-size:16px;
-  color:#aaa;
-  letter-spacing:1px;
-}
-/* Overlay (still used) */
 .video-overlay {
   position:absolute; inset:0; display:flex; flex-direction:column;
   align-items:center; justify-content:center; gap:14px;
   pointer-events:none; opacity:1; transition:opacity 0.25s ease;
   background:rgba(0,0,0,0.72);
-  z-index:15;
 }
 .video-overlay.hidden { opacity:0; visibility:hidden; }
 .overlay-icon { font-size:48px; color:#fff; }
 .overlay-hint { font-size:14px; color:#ccc; text-align:center; line-height:2; }
+.overlay-hint span { font-size:12px; color:#555; }
 
 .fs-hint {
   position:absolute; bottom:20px; left:50%;
@@ -324,7 +294,7 @@ video.ar-wide  { object-fit:contain; transform:scaleX(1.34); }
   background:rgba(0,0,0,.85); color:#777;
   font-size:12px; padding:6px 22px; border-radius:20px;
   pointer-events:none; opacity:0; transition:opacity 0.25s ease;
-  white-space:nowrap; z-index:25;
+  white-space:nowrap; letter-spacing:.5px;
 }
 .fs-hint.visible { opacity:1; }
 
@@ -332,11 +302,11 @@ video.ar-wide  { object-fit:contain; transform:scaleX(1.34); }
   height:2px; background:linear-gradient(90deg,var(--accent),#ff7070);
   border-radius:2px; width:0%; opacity:0;
   transition:width 0.35s ease,opacity 0.2s;
-  flex-shrink:0; will-change:width;
+  flex-shrink:0; will-change:width,opacity; transform:translateZ(0);
 }
 .load-bar.active { opacity:1; }
 
-/* Fullscreen */
+/* ── Fullscreen ──────────────────────────────────────────── */
 body.fullscreen .sidebar       { display:none; }
 body.fullscreen .app           { grid-template-columns:1fr; }
 body.fullscreen .player-area   { padding:0; gap:0; }
@@ -345,7 +315,7 @@ body.fullscreen .load-bar      { display:none; }
 body.fullscreen .video-wrap    { position:fixed; inset:0; z-index:9999; border-radius:0; border:none; }
 body.fullscreen .fs-hint       { z-index:10000; }
 
-/* Toast */
+/* ── Toast ───────────────────────────────────────────────── */
 #toast {
   position:fixed; bottom:44px; left:50%; transform:translateX(-50%);
   background:rgba(0,0,0,0.92); border:1px solid #2a2a2a;
@@ -353,6 +323,6 @@ body.fullscreen .fs-hint       { z-index:10000; }
   padding:12px 30px; border-radius:30px;
   z-index:9999; pointer-events:none;
   opacity:0; transition:opacity 0.25s ease;
-  white-space:nowrap;
+  letter-spacing:0.5px; white-space:nowrap;
 }
 * { outline:none; }
