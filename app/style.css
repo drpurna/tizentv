@@ -1,5 +1,5 @@
 /* ================================================================
-   IPTV — style.css v8.0  |  Shaka + splash + professional logo
+   IPTV — style.css v8.2  |  Fixed logo fallback + larger font
    ================================================================ */
 
 :root {
@@ -58,10 +58,10 @@ html,body {
   margin-bottom: 16px;
 }
 .brand-icon {
-  height: 1em;               /* scale with text size */
+  height: 1em;
   width: auto;
-  font-size: 42px;           /* matches brand-title font-size */
-  color: var(--accent);      /* red accent */
+  font-size: 42px;
+  color: var(--accent);
   flex-shrink: 0;
 }
 .brand-title {
@@ -162,11 +162,11 @@ html,body {
 .ch-info { flex:1; min-width:0; }
 .ch-name {
   font-family:var(--font-title);
-  font-size:24px;
+  font-size: 28px;      /* increased from 24px */
   font-weight:700;
   color:var(--text);
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-  line-height:1;
+  line-height:1.2;
 }
 .ch-fav { font-size:16px; color:var(--gold); flex-shrink:0; margin-right:2px; }
 .ch-num {
