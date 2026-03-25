@@ -61,7 +61,7 @@ function finishLoadBar(){clearTimeout(loadBarTimer);loadBar.style.width='100%';s
 
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function initials(n){return n.replace(/[^a-zA-Z0-9]/g,' ').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase()||'?';}
-function cleanName(raw){return raw.replace(/\s*[\\[(][^\\]*)]*[\])]/g,'').replace(/\b(4K|UHD|FHD|HLS|HEVC|H264|H\.264|SD|HD|576[piP]?|720[piP]?|1080[piP]?|2160[piP]?)\b/gi,'').replace(/[\|\-\u2013\u2014]+\s*$/g,'').replace(/\s{2,}/g,' ').trim();}
+function cleanName(raw){return raw.replace(/\s*[\[(][^\]*)]*[\])]/g,'').replace(/\b(4K|UHD|FHD|HLS|HEVC|H264|H\.264|SD|HD|576[piP]?|720[piP]?|1080[piP]?|2160[piP]?)\b/gi,'').replace(/[\|\-\u2013\u2014]+\s*$/g,'').replace(/\s{2,}/g,' ').trim();}
 function parseM3U(text){const lines=text.split(/\r?\n/),out=[];let meta=null;for(const raw of lines){const line=raw.trim();if(!line)continue;if(line.startsWith('#EXTINF')){const np=line.includes(',')?line.split(',').slice(1).join(',').trim():'Unknown';const gm=line.match(/group-title="([^"]+)"/i),lm=line.match(/tvg-logo="([^"]+)"/i);meta={name:cleanName(np)||np,group:gm?gm[1]:'Other',logo:lm?lm[1]:''};continue;}if(!line.startsWith('#')&&meta){out.push({name:meta.name,group:meta.group,logo:meta.logo,url:line});meta=null;}}return out;}
 
 function proxyXHR(method,targetUrl,headers,body,timeoutMs){
@@ -79,7 +79,7 @@ function proxyXHR(method,targetUrl,headers,body,timeoutMs){
       reject(err);
     };
     xhr.onerror=()=>reject(new Error('Cannot reach proxy — check internet'));
-    xhr.ontimeout=()=>reject(new Error('Timed out — open houser-3q3n.onrender.com on phone first'));
+    xhr.ontimeout=()=>reject(new Error('Timed out — open houser-3q3n.onrender.com on phone first to wake proxy'));
     xhr.send(body?JSON.stringify(body):null);
   });
 }
@@ -90,6 +90,7 @@ function jioHdr(withAuth){
   return h;
 }
 
+// ── OTP Login — +91 prefix + Base64 (verified working) ───
 function jioSendOTP(mobile){
   const b64=btoa('+91'+mobile);
   return proxyXHR('POST',JIO_SEND_OTP,jioHdr(false),{number:b64},25000)
@@ -100,6 +101,7 @@ function jioVerifyOTP(mobile,otp){
   return proxyXHR('POST',JIO_VERIFY_OTP,jioHdr(false),
     {number:b64,OTP:String(otp),deviceInfo:{consumptionDeviceName:'SM-G930F',info:{type:'android',platform:{name:'SM-G930F'},androidId:'a7c3f9b2d1e84f56'}}},25000)
   .then(data=>{
+    console.log('[Jio] verifyOTP',JSON.stringify(data));
     const acc=data.authToken||data.accessToken||'';
     const sso=data.ssoToken||'';
     if(!acc&&!sso)throw new Error(data.message||data.errorMessage||'Wrong OTP — please retry');
@@ -125,7 +127,7 @@ function loadJioChannels(){
   const r=(jioCred&&jioCred.accessTokenExpiry&&jioCred.accessTokenExpiry-Date.now()<300000)?jioRefreshTokens().catch(()=>{}):Promise.resolve();
   return r.then(()=>proxyXHR('GET',JIO_CHANNELS,jioHdr(true),null,30000))
     .then(data=>{
-      const list=Array.isArray(data)?Array.isArray(data.result)?data.result:Array.isArray(data.channels)?data.channels:[];
+      const list=Array.isArray(data)?data:Array.isArray(data.result)?data.result:Array.isArray(data.channels)?data.channels:[];
       if(!list.length)throw new Error('Empty channel list');
       jioChannels=list.map(ch=>({name:ch.channel_name||ch.channelName||'Unknown',logo:ch.logoUrl||ch.logo_url||'',channelId:String(ch.channel_id||ch.channelId||''),group:JIO_CAT[ch.channelCategoryId]||'Jio TV',isHD:!!(ch.isHD||ch.is_hd),url:null})).filter(c=>c.channelId);
       jioChannels.forEach(c=>{if(!allChannels.find(x=>x.channelId===c.channelId))allChannels.push(c);});
