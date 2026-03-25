@@ -1,5 +1,5 @@
 // ================================================================
-// IPTV — app.js v8.1  |  Fixed logo fallback error
+// IPTV — app.js v8.2  |  Click play, auto‑wide for 576p, bigger font
 // ================================================================
 
 (function checkShaka(){
@@ -68,14 +68,14 @@ const SHAKA_CFG = {
   }
 };
 
-/* Aspect ratio modes — default = cover (index 2) */
+/* Aspect ratio modes — default = Fit (index 0) */
 const AR_MODES = [
   { cls:'',         label:'Fit'  },
   { cls:'ar-fill',  label:'Fill' },
   { cls:'ar-cover', label:'Crop' },
   { cls:'ar-wide',  label:'Wide' },
 ];
-let arIdx = 2;
+let arIdx = 0;   // default to Fit
 
 /* State */
 let channels      = [];
@@ -262,7 +262,12 @@ const VS = {
       if(li._nm) li._nm.style.color='#000';
       if(li._nu) li._nu.style.color='#999';
     }
-    li.addEventListener('click',()=>{ selectedIndex=i; VS.refresh(); schedulePreview(); });
+    // 🔥 CLICK → immediate play
+    li.addEventListener('click', () => {
+      selectedIndex = i;
+      VS.refresh();
+      playSelected();   // immediate, no delay
+    });
     return li;
   },
   refresh(){ this.rs=-1; this.re=-1; this._paint(); },
@@ -444,6 +449,27 @@ function startPreview(idx){
     shakaPlayer.addEventListener('manifestparsed', () => {
       video.play().catch(()=>{});
     });
+
+    // 🔥 Auto‑Wide for 576p (only if default mode is Fit)
+    let autoWideApplied = false;
+    const handleMetadata = () => {
+      const height = video.videoHeight;
+      if (height === 576 && !autoWideApplied && arIdx === 0) {
+        video.classList.remove('ar-fill', 'ar-cover', 'ar-wide');
+        video.classList.add('ar-wide');
+        arBtn.textContent = '⛶ Wide (auto)';
+        arBtn.classList.add('ar-wide');
+        autoWideApplied = true;
+        showToast('Auto wide mode for 576p');
+      }
+      video.removeEventListener('loadedmetadata', handleMetadata);
+    };
+    if (video.readyState >= 1) {
+      handleMetadata();
+    } else {
+      video.addEventListener('loadedmetadata', handleMetadata);
+    }
+
     const loadTimeout = setTimeout(() => {
       if(shakaPlayer) {
         shakaPlayer.destroy().catch(()=>{});
@@ -652,9 +678,12 @@ window.addEventListener('keydown',e=>{
   document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',i===plIdx));
   VS.init(channelListEl);
 
-  video.classList.add('ar-cover');
-  arBtn.textContent='⛶ Crop';
-  arBtn.classList.add('ar-cover');
+  // default aspect ratio: Fit
+  video.classList.add('ar-fill');   // actually Fit = no class, but we set no class? Wait, Fit uses no class. We'll remove any.
+  video.classList.remove('ar-fill', 'ar-cover', 'ar-wide');
+  arBtn.textContent='⛶ Fit';
+  arBtn.classList.remove('ar-fill', 'ar-cover', 'ar-wide');
+  arIdx = 0;
 
   loadPlaylist();
 
