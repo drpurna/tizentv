@@ -1,5 +1,5 @@
 // ================================================================
-// IPTV — app.js v8.0  |  Buffer cleanup + crash-proof loading
+// IPTV — app.js v8.1  |  Fixed logo fallback error
 // ================================================================
 
 (function checkShaka(){
@@ -39,7 +39,7 @@ const FAV_KEY      = 'iptv:favs';
 const PLAYLIST_KEY = 'iptv:lastPl';
 const CACHE_KEY    = 'iptv:playlistCache';
 
-/* Shaka config with aggressive timeout and memory‑friendly buffer */
+/* Shaka config */
 const SHAKA_CFG = {
   streaming: {
     bufferingGoal: 20,
@@ -235,16 +235,26 @@ const VS = {
     const li=document.createElement('li');
     li._i=i; li._on=false;
     li.style.cssText='position:absolute;top:'+(i*this.ITEM_H)+'px;left:0;right:0;height:'+this.ITEM_H+'px;';
-    const ini=esc(initials(ch.name));
-    const logo=ch.logo
-      ? '<div class="ch-logo"><img src="'+esc(ch.logo)+'" alt="" loading="lazy"'
-        +' onerror="this.style.display=\'none\';this.nextSibling.style.display=\'flex\'"'
-        +' onload="this.nextSibling.style.display=\'none\'"><span class="ch-logo-fb" style="display:none">'+ini+'</span></div>'
-      : '<div class="ch-logo"><span class="ch-logo-fb">'+ini+'</span></div>';
-    li.innerHTML=logo
-      +'<div class="ch-info"><div class="ch-name">'+esc(ch.name)+'</div></div>'
-      +(isFav(ch)?'<span class="ch-fav">★</span>':'')
-      +'<div class="ch-num">'+(i+1)+'</div>';
+
+    const ini = esc(initials(ch.name));
+    let logoHtml = '';
+    if (ch.logo) {
+      logoHtml = `
+        <div class="ch-logo">
+          <img src="${esc(ch.logo)}" alt="" loading="lazy"
+               onerror="this.style.display='none'; this.parentNode.querySelector('.ch-logo-fb').style.display='flex'"
+               onload="this.parentNode.querySelector('.ch-logo-fb').style.display='none'">
+          <span class="ch-logo-fb">${ini}</span>
+        </div>`;
+    } else {
+      logoHtml = `<div class="ch-logo"><span class="ch-logo-fb">${ini}</span></div>`;
+    }
+
+    li.innerHTML = logoHtml
+      + '<div class="ch-info"><div class="ch-name">'+esc(ch.name)+'</div></div>'
+      + (isFav(ch)?'<span class="ch-fav">★</span>':'')
+      + '<div class="ch-num">'+(i+1)+'</div>';
+
     li._nm=li.querySelector('.ch-name');
     li._nu=li.querySelector('.ch-num');
     if(i===selectedIndex){
