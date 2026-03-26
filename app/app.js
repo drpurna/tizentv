@@ -1,7 +1,7 @@
 // ================================================================
-// IPTV — app.js v10.1 | Samsung Tizen TV
+// IPTV — app.js v10.2 | Samsung Tizen TV
 // Proxy : https://houser-3q3n.onrender.com  (Singapore IP)
-// Fix   : +91 prefix in btoa() for Jio OTP API
+// Fixes : +91 OTP login, bitrates.auto stream URL, hdnea token, Shaka retry
 // ================================================================
 
 const PROXY        = 'https://houser-3q3n.onrender.com';
@@ -120,7 +120,19 @@ function jioRefreshTokens(){
 function jioGetStreamUrl(channelId){
   const r=(jioCred.accessTokenExpiry&&jioCred.accessTokenExpiry-Date.now()<300000)?jioRefreshTokens().catch(()=>{}):Promise.resolve();
   return r.then(()=>proxyXHR('POST',JIO_STREAM,jioHdr(true),{channel_id:String(channelId),liveurl:'1'},15000))
-    .then(data=>{const u=data.result||data.url||data.stream_url||data.streamUrl||'';if(!u)throw new Error(data.message||'No stream URL');return u;});
+    .then(data=>{
+    let u='';
+    if(data.result&&data.result.bitrates){
+      u=data.result.bitrates.auto||data.result.bitrates.high||data.result.bitrates.low||'';
+      if(u&&data.result.hdnea&&!u.includes('hdnea=')){
+        u+=(u.includes('?')?'&':'?')+'hdnea='+data.result.hdnea;
+      }
+    }
+    if(!u)u=data.url||data.stream_url||data.streamUrl||'';
+    if(!u)throw new Error(data.message||'No stream URL');
+    console.log('[Jio] stream:',u.substring(0,80));
+    return u;
+  });
 }
 function loadJioChannels(){
   setStatus('Loading Jio\u2026','loading');startLoadBar();
@@ -207,7 +219,21 @@ async function doPlayPreview(ch,idx){
   if(!window.shaka||!shaka.Player.isBrowserSupported()){setStatus('Shaka unsupported','error');finishLoadBar();return;}
   try{
     shakaPlayer=new shaka.Player();await shakaPlayer.attach(video);shakaPlayer.configure(SHAKA_CFG);
-    shakaPlayer.addEventListener('error',e=>{const err=e.detail;if(err.severity===shaka.util.Error.Severity.CRITICAL){setStatus('Error '+err.code,'error');finishLoadBar();}});
+    shakaPlayer.addEventListener('error',e=>{
+      const err=e.detail;
+      console.error('[Shaka] code:'+err.code+' cat:'+err.category,err);
+      if(err.severity===shaka.util.Error.Severity.CRITICAL){
+        if((err.code===1001||err.code===1002)&&ch.channelId){
+          setStatus('Retrying stream…','loading');
+          jioRefreshTokens().catch(()=>{})
+            .then(()=>jioGetStreamUrl(ch.channelId))
+            .then(newUrl=>shakaPlayer.load(newUrl).then(()=>video.play().catch(()=>{})))
+            .catch(()=>{setStatus('Stream failed — try again','error');finishLoadBar();});
+        }else{
+          setStatus('Stream error '+err.code,'error');finishLoadBar();
+        }
+      }
+    });
     shakaPlayer.addEventListener('buffering',e=>{if(e.buffering){setStatus('Buffering\u2026','loading');startLoadBar();}});
     await shakaPlayer.load(url);video.play().catch(()=>{});
   }catch(e){finishLoadBar();setStatus('Play error: '+(e.message||'unknown'),'error');}
