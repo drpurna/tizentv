@@ -1,32 +1,20 @@
 // ================================================================
 // IPTV Pro — app.js v11.4 | Samsung Tizen OS9 TV
 // ================================================================
-// v11.4 Changes (on top of v11.3):
-// • Dual-layer token persistence:
-//     Layer 1 — localStorage (fast read on boot)
-//     Layer 2 — tizen.filesystem wgt-storage/jiotoken.json (survives
-//               hard power-off flush loss, app redeploy wipes LS only)
-// • flushCriticalStorage() called on:
-//     – visibilitychange → hidden
-//     – pagehide
-//     – tizenhwkey 'back'
-//     – every successful token write / refresh
-// • loadTokenFromDisk() fallback in init() if localStorage empty
-// • Jio channel list also backed up to wgt-storage/jiochannels.json
-//   (channels load instantly on next boot even if LS wiped)
-// ================================================================
-// v11.3 Changes:
-// • FIX: Jio modal phone/OTP input — remote number keys no longer
-//        hijacked by channel dialer (focusArea='modal')
-// • FIX: Fullscreen no longer forces object-fit:cover
-// • FIX: Removed applyAutoAspect() auto-Wide forcing on SD streams
-// • FIX: toggleFav() + showFavourites() missing closing braces
-// • NEW: Proxy keep-alive ping every 10 min
-// • AR modes: Native | Fill | Crop | Wide
+// PROXY UPDATE: https://houser-af7j.onrender.com (v5 endpoints)
+// v11.4 Changes:
+// • Dual-layer token persistence (localStorage + tizen.filesystem)
+// • flushCriticalStorage() on visibilitychange/pagehide/back key
+// • Disk fallback if localStorage wiped
+// • Jio channel list backed up to wgt-storage/jiochannels.json
+// • Proxy keep-alive ping every 10 min
+// • Modal focusArea='modal' (phone/OTP input works)
+// • No fullscreen cropping (object-fit:contain)
+// • toggleFav() + showFavourites() braces fixed
 // ================================================================
 
 /* ── Constants ───────────────────────────────────────────── */
-const PROXY = 'https://houser-af7j.onrender.com';
+const PROXY          = 'https://houser-af7j.onrender.com';
 const JIO_API_BASE   = PROXY + '/jio';
 const FAV_KEY        = 'iptv:favs';
 const PLAYLIST_KEY   = 'iptv:lastPl';
@@ -85,37 +73,31 @@ let prefetchCache = {};
 
 /* ================================================================
 TIZEN FILESYSTEM — Dual-layer persistence
-Writes critical data to wgt-storage so it survives:
-  - Hard power-off (localStorage flush loss)
-  - localStorage wipe on redeploy
 ================================================================ */
 const FS = {
   _resolve(cb, errCb) {
     if (!window.tizen || !tizen.filesystem) { if(errCb) errCb('no-tizen'); return; }
     tizen.filesystem.resolve('wgt-storage', cb, errCb || (()=>{}), 'rw');
   },
-
   write(filename, data) {
     try {
       this._resolve(dir => {
         try {
-          // Delete old file first to avoid append issues
-          try { dir.deleteFile('wgt-storage/' + filename); } catch(e) {}
-          const file   = dir.createFile(filename);
+          try { dir.deleteFile(filename); } catch(e) {}
+          const file = dir.createFile(filename);
           file.openStream('w', stream => {
             stream.write(typeof data === 'string' ? data : JSON.stringify(data));
             stream.close();
-          }, e => console.warn('[FS] write stream err', e), 'UTF-8');
-        } catch(e) { console.warn('[FS] write err', e); }
+          }, e => console.warn('[FS] write err', e), 'UTF-8');
+        } catch(e) { console.warn('[FS] err', e); }
       });
     } catch(e) {}
   },
-
   read(filename, cb) {
     try {
       this._resolve(dir => {
         try {
-          tizen.filesystem.resolve('wgt-storage/' + filename, file => {
+          tizen.filesystem.resolve(filename, file => {
             file.openStream('r', stream => {
               const raw = stream.read(file.fileSize);
               stream.close();
@@ -128,9 +110,7 @@ const FS = {
   },
 };
 
-/* ── Critical storage flush ──────────────────────────────── */
-// Called on visibility hidden, pagehide, back key — ensures data
-// is committed to disk before TV powers off
+/* ── Critical storage flush ───────────────────────────────── */
 function flushCriticalStorage() {
   try {
     if (jioToken) {
@@ -138,29 +118,25 @@ function flushCriticalStorage() {
       FS.write(FS_TOKEN_FILE, jioToken);
     }
     if (jioChannels.length) {
-      const payload = { channels: jioChannels, time: Date.now() };
       localStorage.setItem(JIO_CH_KEY, JSON.stringify(jioChannels));
       localStorage.setItem(JIO_CH_KEY + ':time', String(Date.now()));
-      FS.write(FS_CH_FILE, payload);
+      FS.write(FS_CH_FILE, { channels: jioChannels, time: Date.now() });
     }
-    // Re-write favs and device ID to force LS flush
     saveFavs();
     const did = localStorage.getItem('_did');
     if (did) localStorage.setItem('_did', did);
   } catch(e) {}
 }
 
-// Hook flush to all exit/suspend events
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') flushCriticalStorage();
 });
 window.addEventListener('pagehide', flushCriticalStorage);
-// Tizen hardware back key
 document.addEventListener('tizenhwkey', e => {
   if (e.keyName === 'back') flushCriticalStorage();
 });
 
-/* ── Favourites ──────────────────────────────────────────── */
+/* ── Favourites ───────────────────────────────────────────── */
 let favSet = new Set();
 (function(){
   try { const r = localStorage.getItem(FAV_KEY); if(r) favSet = new Set(JSON.parse(r)); } catch(e){}
@@ -346,11 +322,11 @@ function mirrorUrl(url){
     const u=new URL(url);
     if(u.hostname!=='raw.githubusercontent.com') return null;
     const p=u.pathname.split('/').filter(Boolean); if(p.length<4) return null;
-    return 'https://cdn.jsdelivr.net/gh/'+p[0]+'/'+p[1]+'@'+p[2]+'/'+p.slice(3).join('/');
+    return '<https://cdn.jsdelivr.net/gh/'+p>[0]+'/'+p[1]+'@'+p[2]+'/'+p.slice(3).join('/');
   }catch(e){ return null; }
 }
 
-/* ── Load playlist (30-min localStorage cache) ───────────── */
+/* ── Load playlist ────────────────────────────────────────── */
 function loadPlaylist(urlOv){
   cancelPreview();
   if(plIdx===FAV_IDX&&!urlOv){ showFavourites(); return; }
@@ -536,13 +512,11 @@ function exitModal(){  focusArea='list';  }
 window.addEventListener('keydown',e=>{
   const k=e.key, c=e.keyCode;
 
-  // MODAL MODE: all keys pass through to focused input; Back closes modal
   if(focusArea==='modal'){
     if(k==='Escape'||k==='Back'||k==='GoBack'||c===10009||c===27){
       const modal=document.getElementById('jioModal');
       if(modal&&modal.style.display!=='none'){
-        modal.style.display='none';
-        exitModal();
+        modal.style.display='none'; exitModal();
         if(plIdx===JIO_IDX&&!jioChannels.length) switchTab(0);
       }
       e.preventDefault();
@@ -575,7 +549,7 @@ window.addEventListener('keydown',e=>{
     else return;
   }
 
-  if(k==='ArrowUp' ||c===38){ isFullscreen?showFsHint():moveSel(-1); e.preventDefault(); return; }
+  if(k==='ArrowUp'  ||c===38){ isFullscreen?showFsHint():moveSel(-1); e.preventDefault(); return; }
   if(k==='ArrowDown'||c===40){ isFullscreen?showFsHint():moveSel(1);  e.preventDefault(); return; }
   if(k==='ArrowLeft'||c===37){ isFullscreen?exitFS():setFocus('list'); e.preventDefault(); return; }
   if(k==='ArrowRight'||c===39){ if(isFullscreen){ showFsHint(); e.preventDefault(); return; } setFocus('ar'); e.preventDefault(); return; }
@@ -587,61 +561,38 @@ window.addEventListener('keydown',e=>{
   if(k==='PageUp') { moveSel(-10); e.preventDefault(); return; }
   if(k==='PageDown'){ moveSel(10);  e.preventDefault(); return; }
   if(k==='MediaPlayPause'||c===10252){ video.paused?video.play().catch(()=>{}):video.pause(); e.preventDefault(); return; }
-  if(k==='MediaPlay'  ||c===415)  { video.play().catch(()=>{}); e.preventDefault(); return; }
-  if(k==='MediaPause' ||c===19)   { video.pause(); e.preventDefault(); return; }
-  if(k==='MediaStop'  ||c===413)  { cancelPreview(); if(player) player.unload(); video.pause(); video.removeAttribute('src'); setStatus('Stopped','idle'); finishLoadBar(); e.preventDefault(); return; }
+  if(k==='MediaPlay'  ||c===415){ video.play().catch(()=>{}); e.preventDefault(); return; }
+  if(k==='MediaPause' ||c===19 ){ video.pause(); e.preventDefault(); return; }
+  if(k==='MediaStop'  ||c===413){ cancelPreview(); if(player) player.unload(); video.pause(); video.removeAttribute('src'); setStatus('Stopped','idle'); finishLoadBar(); e.preventDefault(); return; }
   if(k==='MediaFastForward'||c===417){ moveSel(1);  e.preventDefault(); return; }
   if(k==='MediaRewind'     ||c===412){ moveSel(-1); e.preventDefault(); return; }
   if(k==='ChannelUp'  ||c===427){ moveSel(1);  e.preventDefault(); return; }
   if(k==='ChannelDown'||c===428){ moveSel(-1); e.preventDefault(); return; }
-  if(k==='ColorF0Red' ||c===403){ switchTab((plIdx+1)%(PLAYLISTS.length+2)); e.preventDefault(); return; }
+  if(k==='ColorF0Red'  ||c===403){ switchTab((plIdx+1)%(PLAYLISTS.length+2)); e.preventDefault(); return; }
   if(k==='ColorF1Green'||c===404){ if(filtered.length&&focusArea==='list') toggleFav(filtered[selectedIndex]); e.preventDefault(); return; }
   if(k==='ColorF2Yellow'||c===405){ setFocus('search'); e.preventDefault(); return; }
   if(k==='ColorF3Blue' ||c===406){ if(hasPlayed) toggleFS(); e.preventDefault(); return; }
 });
 
-/* ================================================================
-ANDROID TV DEVICE SPOOF
-================================================================ */
+/* ── Android TV spoof ────────────────────────────────────── */
 const DEVICE = {
-  model       : 'BRAVIA_ATV3',
-  manufacturer: 'Sony',
-  osVersion   : '11',
-  sdkVersion  : '30',
-  appVersion  : '7.0.4',
-  uniqueId    : (()=>{
-    let id=localStorage.getItem('_did');
-    if(!id){ id='xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{ const r=Math.random()*16|0; return (c==='x'?r:(r&0x3|0x8)).toString(16); }); localStorage.setItem('_did',id); }
-    return id;
-  })(),
+  model:'BRAVIA_ATV3', manufacturer:'Sony', osVersion:'11', sdkVersion:'30', appVersion:'7.0.4',
+  uniqueId:(()=>{ let id=localStorage.getItem('_did'); if(!id){ id='xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{ const r=Math.random()*16|0; return (c==='x'?r:(r&0x3|0x8)).toString(16); }); localStorage.setItem('_did',id); } return id; })(),
 };
 const ANDROID_HEADERS = {
-  'User-Agent'     : `JioTV/${DEVICE.appVersion} (Android ${DEVICE.osVersion}; ${DEVICE.manufacturer} ${DEVICE.model}) okhttp/4.9.2`,
-  'x-platform'    : 'androidtv',
-  'x-app-version' : DEVICE.appVersion,
-  'x-device-type' : 'tv',
-  'x-os-version'  : DEVICE.osVersion,
-  'x-unique-id'   : DEVICE.uniqueId,
-  'x-subscriber-id': DEVICE.uniqueId,
-  'devicetype'    : 'tv',
-  'os'            : 'android',
-  'appname'       : 'RJIL_JioTV',
-  'Accept'        : 'application/json',
-  'Content-Type'  : 'application/json',
+  'User-Agent'     :`JioTV/${DEVICE.appVersion} (Android ${DEVICE.osVersion}; ${DEVICE.manufacturer} ${DEVICE.model}) okhttp/4.9.2`,
+  'x-platform'    :'androidtv','x-app-version':DEVICE.appVersion,'x-device-type':'tv',
+  'x-os-version'  :DEVICE.osVersion,'x-unique-id':DEVICE.uniqueId,'x-subscriber-id':DEVICE.uniqueId,
+  'devicetype'    :'tv','os':'android','appname':'RJIL_JioTV',
+  'Accept'        :'application/json','Content-Type':'application/json',
 };
 
-/* ================================================================
-JIO TV — Direct API via proxy
-================================================================ */
+/* ── Jio API ─────────────────────────────────────────────── */
 async function jioApi(path, options={}){
   const controller=new AbortController();
   const tid=setTimeout(()=>controller.abort(),15000);
   try{
-    const res=await fetch(PROXY+path,{
-      ...options,
-      headers:{ ...ANDROID_HEADERS, ...(options.headers||{}) },
-      signal:controller.signal
-    });
+    const res=await fetch(PROXY+path,{ ...options, headers:{ ...ANDROID_HEADERS, ...(options.headers||{}) }, signal:controller.signal });
     clearTimeout(tid);
     if(!res.ok) throw new Error('HTTP '+res.status);
     return await res.json();
@@ -649,17 +600,11 @@ async function jioApi(path, options={}){
 }
 
 async function jioRequestOtp(mobile){
-  const data=await jioApi('/jio/sendotp',{
-    method:'POST',
-    body:JSON.stringify({ number:'+91'+mobile, deviceInfo:{ model:DEVICE.model, manufacturer:DEVICE.manufacturer, osVersion:DEVICE.osVersion, uniqueId:DEVICE.uniqueId, deviceType:'tv' } })
-  });
+  const data=await jioApi('/jio/sendotp',{ method:'POST', body:JSON.stringify({ number:'+91'+mobile, deviceInfo:{ model:DEVICE.model, manufacturer:DEVICE.manufacturer, osVersion:DEVICE.osVersion, uniqueId:DEVICE.uniqueId, deviceType:'tv' } }) });
   return data.requestId||data.OtpReqId;
 }
 async function jioVerifyOtp(mobile,otp,requestId){
-  const data=await jioApi('/jio/verifyotp',{
-    method:'POST',
-    body:JSON.stringify({ number:'+91'+mobile, otp, requestId, deviceInfo:{ model:DEVICE.model, manufacturer:DEVICE.manufacturer, osVersion:DEVICE.osVersion, uniqueId:DEVICE.uniqueId, deviceType:'tv' } })
-  });
+  const data=await jioApi('/jio/verifyotp',{ method:'POST', body:JSON.stringify({ number:'+91'+mobile, otp, requestId, deviceInfo:{ model:DEVICE.model, manufacturer:DEVICE.manufacturer, osVersion:DEVICE.osVersion, uniqueId:DEVICE.uniqueId, deviceType:'tv' } }) });
   return { ssoToken:data.ssoToken||data.access_token, refreshToken:data.refreshToken||data.refresh_token, expires:Date.now()+((data.tokenValidity||3600)*1000) };
 }
 async function jioGetStreamUrl(channelId){
@@ -675,9 +620,8 @@ async function jioRefreshToken(){
     const data=await jioApi('/jio/refreshtoken',{ method:'POST', body:JSON.stringify({refreshToken:jioToken.refreshToken}) });
     jioToken.ssoToken=data.ssoToken||data.access_token;
     jioToken.expires=Date.now()+((data.tokenValidity||3600)*1000);
-    // Write to both layers immediately on every refresh
     localStorage.setItem(JIO_TOKEN_KEY,JSON.stringify(jioToken));
-    FS.write(FS_TOKEN_FILE, jioToken);
+    FS.write(FS_TOKEN_FILE,jioToken);
     return true;
   }catch(e){ return false; }
 }
@@ -694,15 +638,9 @@ async function loadJioChannels(){
     }
     const data=await jioApi('/jio/channels',{ headers:{'ssotoken':jioToken.ssoToken} });
     jioChannels=(data.result||data.channels||[]).map(ch=>({ name:ch.channelName, logo:ch.logoUrl||'', channelId:ch.channelId, group:'Jio TV', url:null }));
-    // Write to both layers
-    try{
-      localStorage.setItem(JIO_CH_KEY,JSON.stringify(jioChannels));
-      localStorage.setItem(JIO_CH_KEY+':time',String(Date.now()));
-      FS.write(FS_CH_FILE, { channels:jioChannels, time:Date.now() });
-    }catch(e){}
+    try{ localStorage.setItem(JIO_CH_KEY,JSON.stringify(jioChannels)); localStorage.setItem(JIO_CH_KEY+':time',String(Date.now())); FS.write(FS_CH_FILE,{ channels:jioChannels, time:Date.now() }); }catch(e){}
     channels=jioChannels.slice(); filtered=channels.slice(); selectedIndex=0; renderList();
-    setStatus('Jio TV · '+channels.length+' ch','idle');
-    return true;
+    setStatus('Jio TV · '+channels.length+' ch','idle'); return true;
   }catch(err){
     if(await jioRefreshToken()){ return loadJioChannels(); }
     setStatus('Jio error: '+err.message,'error'); return false;
@@ -711,36 +649,27 @@ async function loadJioChannels(){
 
 /* ── Jio Login Modal ─────────────────────────────────────── */
 function showJioLoginModal(){
-  const modal      = document.getElementById('jioModal');
-  const step1      = document.getElementById('jioLoginStep1');
-  const step2      = document.getElementById('jioLoginStep2');
-  const statusDiv  = document.getElementById('jioStatus');
-  const mobileInput= document.getElementById('jioMobile');
-  const otpInput   = document.getElementById('jioOtp');
-  const reqBtn     = document.getElementById('jioRequestOtp');
-  const verifyBtn  = document.getElementById('jioVerifyOtp');
-  const closeBtn   = document.getElementById('jioCloseModal');
-
+  const modal=document.getElementById('jioModal');
+  const step1=document.getElementById('jioLoginStep1');
+  const step2=document.getElementById('jioLoginStep2');
+  const statusDiv=document.getElementById('jioStatus');
+  const mobileInput=document.getElementById('jioMobile');
+  const otpInput=document.getElementById('jioOtp');
+  const reqBtn=document.getElementById('jioRequestOtp');
+  const verifyBtn=document.getElementById('jioVerifyOtp');
+  const closeBtn=document.getElementById('jioCloseModal');
   step1.style.display='block'; step2.style.display='none';
   statusDiv.innerHTML=''; mobileInput.value=''; otpInput.value='';
   let requestId=null;
-
-  enterModal();
-  modal.style.display='flex';
+  enterModal(); modal.style.display='flex';
   setTimeout(()=>mobileInput.focus(),150);
-
   reqBtn.onclick=async()=>{
     const mobile=mobileInput.value.trim();
     if(!/^\d{10}$/.test(mobile)){ statusDiv.innerHTML='<span style="color:#e50000">Enter valid 10-digit number</span>'; return; }
     statusDiv.innerHTML='Sending OTP…';
-    try{
-      requestId=await jioRequestOtp(mobile);
-      statusDiv.innerHTML='OTP sent ✓';
-      step1.style.display='none'; step2.style.display='block';
-      setTimeout(()=>otpInput.focus(),100);
-    }catch(err){ statusDiv.innerHTML='<span style="color:#e50000">'+err.message+'</span>'; }
+    try{ requestId=await jioRequestOtp(mobile); statusDiv.innerHTML='OTP sent ✓'; step1.style.display='none'; step2.style.display='block'; setTimeout(()=>otpInput.focus(),100); }
+    catch(err){ statusDiv.innerHTML='<span style="color:#e50000">'+err.message+'</span>'; }
   };
-
   verifyBtn.onclick=async()=>{
     const mobile=mobileInput.value.trim(); const otp=otpInput.value.trim();
     if(!otp){ statusDiv.innerHTML='Enter OTP'; return; }
@@ -748,22 +677,14 @@ function showJioLoginModal(){
     try{
       const t=await jioVerifyOtp(mobile,otp,requestId);
       jioToken=t;
-      // Write to both layers on fresh login
       localStorage.setItem(JIO_TOKEN_KEY,JSON.stringify(jioToken));
-      FS.write(FS_TOKEN_FILE, jioToken);
+      FS.write(FS_TOKEN_FILE,jioToken);
       statusDiv.innerHTML='✓ Login successful! Loading channels…';
-      modal.style.display='none';
-      exitModal();
-      scheduleTokenRefresh();
-      await loadJioChannels(); setFocus('list');
+      modal.style.display='none'; exitModal();
+      scheduleTokenRefresh(); await loadJioChannels(); setFocus('list');
     }catch(err){ statusDiv.innerHTML='<span style="color:#e50000">'+err.message+'</span>'; }
   };
-
-  closeBtn.onclick=()=>{
-    modal.style.display='none';
-    exitModal();
-    if(plIdx===JIO_IDX&&!jioChannels.length) switchTab(0);
-  };
+  closeBtn.onclick=()=>{ modal.style.display='none'; exitModal(); if(plIdx===JIO_IDX&&!jioChannels.length) switchTab(0); };
 }
 
 async function handleJioTab(){
@@ -773,41 +694,31 @@ async function handleJioTab(){
     try{
       const t=JSON.parse(stored);
       if(t.expires>Date.now()){ jioToken=t; await loadJioChannels(); return; }
-      jioToken=t;
-      if(await jioRefreshToken()){ await loadJioChannels(); return; }
+      jioToken=t; if(await jioRefreshToken()){ await loadJioChannels(); return; }
       localStorage.removeItem(JIO_TOKEN_KEY);
     }catch(e){}
   }
-  // Layer 2 fallback: try reading from tizen.filesystem
   FS.read(FS_TOKEN_FILE, async diskToken => {
-    if(diskToken && diskToken.ssoToken){
+    if(diskToken&&diskToken.ssoToken){
       jioToken=diskToken;
-      if(jioToken.expires > Date.now()){
-        // Restore to localStorage too
-        localStorage.setItem(JIO_TOKEN_KEY, JSON.stringify(jioToken));
-        // Also try loading cached channels from disk
+      if(jioToken.expires>Date.now()){
+        localStorage.setItem(JIO_TOKEN_KEY,JSON.stringify(jioToken));
         FS.read(FS_CH_FILE, async diskCh => {
-          if(diskCh?.channels?.length && (Date.now()-diskCh.time)<JIO_CH_TTL){
+          if(diskCh?.channels?.length&&(Date.now()-diskCh.time)<JIO_CH_TTL){
             jioChannels=diskCh.channels;
-            localStorage.setItem(JIO_CH_KEY, JSON.stringify(jioChannels));
-            localStorage.setItem(JIO_CH_KEY+':time', String(diskCh.time));
+            localStorage.setItem(JIO_CH_KEY,JSON.stringify(jioChannels));
+            localStorage.setItem(JIO_CH_KEY+':time',String(diskCh.time));
             channels=jioChannels.slice(); filtered=channels.slice(); selectedIndex=0; renderList();
             setStatus('Jio TV · '+channels.length+' ch (disk cache)','idle');
-          } else {
-            await loadJioChannels();
-          }
+          } else { await loadJioChannels(); }
         });
-        scheduleTokenRefresh();
-        return;
+        scheduleTokenRefresh(); return;
       }
-      // Disk token expired — try refresh
-      if(await jioRefreshToken()){ await loadJioChannels(); return; }
     }
     showJioLoginModal();
   });
 }
 
-/* ── Token auto-refresh (15 min before expiry) ───────────── */
 function scheduleTokenRefresh(){
   if(!jioToken?.expires) return;
   const delay=jioToken.expires-Date.now()-(15*60*1000);
@@ -821,24 +732,9 @@ function scheduleTokenRefresh(){
   VS.init(channelListEl);
   await initShaka();
   if(plIdx===JIO_IDX) handleJioTab(); else loadPlaylist();
-  // Pre-warm Jio token silently (localStorage first, disk fallback)
   try{
     const stored=localStorage.getItem(JIO_TOKEN_KEY);
-    if(stored){
-      const t=JSON.parse(stored);
-      if(t.expires>Date.now()){ jioToken=t; scheduleTokenRefresh(); }
-    } else {
-      // No LS token — try disk silently (handles hard power-off scenario)
-      FS.read(FS_TOKEN_FILE, t => {
-        if(t?.ssoToken && t.expires>Date.now()){
-          jioToken=t;
-          localStorage.setItem(JIO_TOKEN_KEY, JSON.stringify(t));
-          scheduleTokenRefresh();
-          console.log('[IPTV] Token restored from disk');
-        }
-      });
-    }
+    if(stored){ const t=JSON.parse(stored); if(t.expires>Date.now()){ jioToken=t; scheduleTokenRefresh(); } }
   }catch(e){}
-  // Proxy keep-alive ping every 10 min
   setInterval(()=>{ fetch(PROXY+'/ping').catch(()=>{}); }, 10*60*1000);
 })();
