@@ -1,8 +1,8 @@
 // ================================================================
-// IPTV Pro — app.js v12.3 | Samsung Tizen OS9 TV
-// - Playlist loading with multiple CORS proxies & manual reload
+// IPTV Pro — app.js v12.4 | Samsung Tizen OS9 TV
+// - Restored original playlist loading (xhrFetch + mirror fallback)
 // - Jio login modal with remote control navigation
-// - Fixed red glow removal (already in CSS)
+// - RED button manual reload
 // ================================================================
 
 const PROXY = 'https://houser-af7j.onrender.com';
@@ -22,13 +22,6 @@ const PLAYLISTS = [
 ];
 const FAV_IDX = 2;
 const JIO_IDX = 3;
-
-// List of CORS proxies to try (order matters)
-const CORS_PROXIES = [
-  PROXY + '/fetch?url=',
-  'https://api.allorigins.win/raw?url=',
-  'https://cors-anywhere.herokuapp.com/',
-];
 
 const AR_MODES = [
   { cls: '', label: 'Native' },
@@ -569,29 +562,7 @@ function mirrorUrl(url) {
   }
 }
 
-// ================== ENHANCED PLAYLIST LOADING ==================
-async function fetchPlaylistWithProxy(url, retryCount = 0) {
-  for (let i = 0; i < CORS_PROXIES.length; i++) {
-    const proxyUrl = CORS_PROXIES[i] + encodeURIComponent(url);
-    try {
-      console.log(`[IPTV] Trying proxy ${i+1}/${CORS_PROXIES.length}: ${proxyUrl}`);
-      const response = await fetch(proxyUrl, { timeout: 15000 });
-      if (response.ok) {
-        const text = await response.text();
-        if (text && text.trim().startsWith('#EXTM3U')) {
-          console.log(`[IPTV] Success with proxy ${i+1}`);
-          return text;
-        } else {
-          console.warn(`[IPTV] Proxy ${i+1} returned non-M3U data`);
-        }
-      }
-    } catch (e) {
-      console.warn(`[IPTV] Proxy ${i+1} failed:`, e.message);
-    }
-  }
-  throw new Error('All proxies failed');
-}
-
+// ================== RELIABLE PLAYLIST LOADING (ORIGINAL) ==================
 function loadPlaylist(urlOv, forceRefresh = false) {
   cancelPreview();
 
@@ -615,26 +586,31 @@ function loadPlaylist(urlOv, forceRefresh = false) {
     } catch (e) {}
   }
 
-  setStatus('Loading playlist…', 'loading');
+  setStatus('Loading…', 'loading');
   startLoadBar();
 
-  fetchPlaylistWithProxy(url)
-    .then(text => {
-      lsSet(cacheKey, text);
-      lsSet(cacheTimeKey, String(Date.now()));
-      finishLoadBar();
-      onLoaded(text, false);
-    })
-    .catch(err => {
-      console.error('[IPTV] All playlist fetch attempts failed', err);
-      finishLoadBar();
-      setStatus('Playlist load failed', 'error');
-      showToast('Could not load playlist. Check network or try again with RED button.');
-      if (channels.length === 0) {
-        filtered = [];
-        renderList();
+  xhrFetch(url, 25000, (err, text) => {
+    if (err) {
+      const m = mirrorUrl(url);
+      if (m) {
+        setStatus('Retrying…', 'loading');
+        xhrFetch(m, 25000, (e2, t2) => {
+          finishLoadBar();
+          if (e2) setStatus('Failed', 'error');
+          else onLoaded(t2, false);
+        });
+      } else {
+        finishLoadBar();
+        setStatus('Failed', 'error');
       }
-    });
+      return;
+    }
+
+    lsSet(cacheKey, text);
+    lsSet(cacheTimeKey, String(Date.now()));
+    finishLoadBar();
+    onLoaded(text, false);
+  });
 
   function onLoaded(text, fromCache) {
     channels = parseM3U(text);
@@ -657,17 +633,6 @@ function loadPlaylist(urlOv, forceRefresh = false) {
     setStatus(`Ready · ${channels.length} ch${fromCache ? ' (cached)' : ''}`, 'idle');
     setFocus('list');
   }
-}
-
-function reloadCurrentPlaylist() {
-  if (plIdx === FAV_IDX) {
-    showFavourites();
-  } else if (plIdx === JIO_IDX) {
-    handleJioTab(true);
-  } else {
-    loadPlaylist(null, true);
-  }
-  showToast('Reloading…');
 }
 
 // ================== JIO MODAL WITH REMOTE NAVIGATION ==================
@@ -698,7 +663,6 @@ function focusModalElement(delta) {
   modalFocusableElements[currentModalFocusIndex].focus();
 }
 
-// Override enterModal to set up focus management
 const originalEnterModal = enterModal;
 enterModal = function() {
   originalEnterModal();
@@ -730,7 +694,7 @@ function bindModalEvents() {
   observer.observe(step2, { attributes: true, attributeFilter: ['style'] });
 }
 
-// ================== ORIGINAL MODAL FUNCTIONS (unchanged except navigation hooks) ==================
+// ================== PLAYER & OTHER CORE FUNCTIONS ==================
 async function initShaka() {
   shaka.polyfill.installAll();
 
@@ -1011,288 +975,7 @@ function exitModal() {
   focusArea = 'list';
 }
 
-window.addEventListener('keydown', e => {
-  const k = e.key;
-  const c = e.keyCode;
-
-  if (focusArea === 'modal') {
-    const modal = document.getElementById('jioModal');
-    if (!modal || modal.style.display === 'none') {
-      setFocus('list');
-      return;
-    }
-
-    // Back/Escape closes modal
-    if (k === 'Escape' || k === 'Back' || k === 'GoBack' || c === 10009 || c === 27) {
-      modal.style.display = 'none';
-      exitModal();
-      if (plIdx === JIO_IDX && !jioChannels.length) switchTab(0);
-      e.preventDefault();
-      return;
-    }
-
-    // Arrow up/down: navigate between focusable elements
-    if (k === 'ArrowUp' || c === 38) {
-      focusModalElement(-1);
-      e.preventDefault();
-      return;
-    }
-    if (k === 'ArrowDown' || c === 40) {
-      focusModalElement(1);
-      e.preventDefault();
-      return;
-    }
-
-    // Enter/OK: click the focused button or submit input
-    if (k === 'Enter' || c === 13) {
-      const focused = document.activeElement;
-      if (focused && (focused.tagName === 'BUTTON' || (focused.tagName === 'INPUT' && focused.type === 'button'))) {
-        focused.click();
-      } else if (focused && focused.tagName === 'INPUT' && focused.type !== 'button') {
-        // If input is focused, trigger the primary button in the visible step
-        const step1 = document.getElementById('jioLoginStep1');
-        const step2 = document.getElementById('jioLoginStep2');
-        const visibleContainer = step1.style.display !== 'none' ? step1 : step2;
-        const buttons = getFocusableElements(visibleContainer).filter(el => el.tagName === 'BUTTON');
-        if (buttons.length) buttons[0].click();
-      }
-      e.preventDefault();
-      return;
-    }
-
-    // For other keys, don't let them propagate to the rest of the app
-    e.preventDefault();
-    return;
-  }
-
-  // ---- Normal key handling (outside modal) ----
-  if ((c >= 48 && c <= 57) || (c >= 96 && c <= 105)) {
-    if (focusArea !== 'search') {
-      handleDigit(String(c >= 96 ? c - 96 : c - 48));
-      e.preventDefault();
-      return;
-    }
-  }
-
-  if (k === 'Escape' || k === 'Back' || k === 'GoBack' || c === 10009 || c === 27) {
-    if (isFullscreen) {
-      exitFS();
-      e.preventDefault();
-      return;
-    }
-
-    if (focusArea === 'ar') {
-      setFocus('list');
-      e.preventDefault();
-      return;
-    }
-
-    if (focusArea === 'search') {
-      clearSearch();
-      e.preventDefault();
-      return;
-    }
-
-    flushCriticalStorage();
-    try {
-      if (window.tizen) tizen.application.getCurrentApplication().exit();
-    } catch (e2) {}
-    e.preventDefault();
-    return;
-  }
-
-  if (focusArea === 'ar') {
-    if (k === 'Enter' || c === 13) {
-      cycleAR();
-      e.preventDefault();
-      return;
-    }
-    if (k === 'ArrowLeft' || c === 37 || k === 'ArrowDown' || c === 40) {
-      setFocus('list');
-      e.preventDefault();
-      return;
-    }
-    if (k === 'ArrowRight' || c === 39 || k === 'ArrowUp' || c === 38) {
-      cycleAR();
-      e.preventDefault();
-      return;
-    }
-    e.preventDefault();
-    return;
-  }
-
-  if (focusArea === 'search') {
-    if (k === 'Enter' || c === 13) {
-      commitSearch();
-      e.preventDefault();
-      return;
-    }
-    if (k === 'ArrowDown' || k === 'ArrowUp' || c === 40 || c === 38) {
-      commitSearch();
-      e.preventDefault();
-      return;
-    }
-    return;
-  }
-
-  if (k === 'ArrowUp' || c === 38) {
-    isFullscreen ? showFsHint() : moveSel(-1);
-    e.preventDefault();
-    return;
-  }
-
-  if (k === 'ArrowDown' || c === 40) {
-    isFullscreen ? showFsHint() : moveSel(1);
-    e.preventDefault();
-    return;
-  }
-
-  if (k === 'ArrowLeft' || c === 37) {
-    if (isFullscreen) {
-      exitFS();
-      e.preventDefault();
-      return;
-    }
-    setFocus('list');
-    e.preventDefault();
-    return;
-  }
-
-  if (k === 'ArrowRight' || c === 39) {
-    if (isFullscreen) {
-      showFsHint();
-      e.preventDefault();
-      return;
-    }
-    setFocus('ar');
-    e.preventDefault();
-    return;
-  }
-
-  if (k === 'Enter' || c === 13) {
-    if (isFullscreen) {
-      exitFS();
-      e.preventDefault();
-      return;
-    }
-    if (focusArea === 'list') {
-      playSelected();
-      setTimeout(() => { if (hasPlayed) enterFS(); }, 600);
-    }
-    e.preventDefault();
-    return;
-  }
-
-  if (k === 'PageUp') {
-    moveSel(-10);
-    e.preventDefault();
-    return;
-  }
-
-  if (k === 'PageDown') {
-    moveSel(10);
-    e.preventDefault();
-    return;
-  }
-
-  if (k === 'MediaPlayPause' || c === 10252) {
-    if (video.paused) video.play().catch(() => {});
-    else video.pause();
-    e.preventDefault();
-    return;
-  }
-
-  if (k === 'MediaPlay' || c === 415) {
-    video.play().catch(() => {});
-    e.preventDefault();
-    return;
-  }
-
-  if (k === 'MediaPause' || c === 19) {
-    video.pause();
-    e.preventDefault();
-    return;
-  }
-
-  if (k === 'MediaStop' || c === 413) {
-    cancelPreview();
-    if (player) player.unload();
-    video.pause();
-    video.removeAttribute('src');
-    setStatus('Stopped', 'idle');
-    finishLoadBar();
-    e.preventDefault();
-    return;
-  }
-
-  if (k === 'MediaFastForward' || c === 417 || k === 'ChannelUp' || c === 427) {
-    moveSel(1);
-    e.preventDefault();
-    return;
-  }
-
-  if (k === 'MediaRewind' || c === 412 || k === 'ChannelDown' || c === 428) {
-    moveSel(-1);
-    e.preventDefault();
-    return;
-  }
-
-  // RED BUTTON: reload current playlist
-  if (k === 'ColorF0Red' || c === 403) {
-    reloadCurrentPlaylist();
-    e.preventDefault();
-    return;
-  }
-
-  if (k === 'ColorF1Green' || c === 404) {
-    if (filtered.length && focusArea === 'list') toggleFav(filtered[selectedIndex]);
-    e.preventDefault();
-    return;
-  }
-
-  if (k === 'ColorF2Yellow' || c === 405) {
-    setFocus('search');
-    e.preventDefault();
-    return;
-  }
-
-  if (k === 'ColorF3Blue' || c === 406) {
-    if (hasPlayed) toggleFS();
-    e.preventDefault();
-  }
-});
-
-async function wakeProxy() {
-  const ctrl = new AbortController();
-  const tid = setTimeout(() => ctrl.abort(), 55000);
-
-  try {
-    await fetch(PROXY + '/ping', { signal: ctrl.signal });
-  } catch (e) {
-    console.warn('[proxy warm-up failed]', e.message);
-  } finally {
-    clearTimeout(tid);
-  }
-}
-
-async function fetchWithRetry(url, opts = {}, retries = 2, baseDelay = 3000) {
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    const ctrl = new AbortController();
-    const tid = setTimeout(() => ctrl.abort(), 60000);
-
-    try {
-      const r = await fetch(url, { ...opts, signal: ctrl.signal });
-      clearTimeout(tid);
-      return r;
-    } catch (err) {
-      clearTimeout(tid);
-      if (attempt === retries) throw err;
-      const delay = baseDelay * Math.pow(2, attempt);
-      await new Promise(res => setTimeout(res, delay));
-    }
-  }
-}
-
+// ================== JIO LOGIN & CHANNELS ==================
 async function jioApi(path, options = {}) {
   const r = await fetchWithRetry(PROXY + path, {
     ...options,
@@ -1312,6 +995,24 @@ async function jioApi(path, options = {}) {
   }
 
   return r.json();
+}
+
+async function fetchWithRetry(url, opts = {}, retries = 2, baseDelay = 3000) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), 60000);
+
+    try {
+      const r = await fetch(url, { ...opts, signal: ctrl.signal });
+      clearTimeout(tid);
+      return r;
+    } catch (err) {
+      clearTimeout(tid);
+      if (attempt === retries) throw err;
+      const delay = baseDelay * Math.pow(2, attempt);
+      await new Promise(res => setTimeout(res, delay));
+    }
+  }
 }
 
 async function jioRequestOtp(mobile) {
@@ -1607,6 +1308,283 @@ async function handleJioTab(forceRefresh = false) {
     console.log('[IPTV] Jio not logged in, switching to first playlist');
     switchTab(0);
   });
+}
+
+// ================== RELOAD CURRENT PLAYLIST (RED BUTTON) ==================
+function reloadCurrentPlaylist() {
+  if (plIdx === FAV_IDX) {
+    showFavourites();
+  } else if (plIdx === JIO_IDX) {
+    handleJioTab(true);
+  } else {
+    loadPlaylist(null, true);
+  }
+  showToast('Reloading…');
+}
+
+// ================== KEYDOWN HANDLER (MODIFIED FOR RED BUTTON) ==================
+window.addEventListener('keydown', e => {
+  const k = e.key;
+  const c = e.keyCode;
+
+  if (focusArea === 'modal') {
+    const modal = document.getElementById('jioModal');
+    if (!modal || modal.style.display === 'none') {
+      setFocus('list');
+      return;
+    }
+
+    // Back/Escape closes modal
+    if (k === 'Escape' || k === 'Back' || k === 'GoBack' || c === 10009 || c === 27) {
+      modal.style.display = 'none';
+      exitModal();
+      if (plIdx === JIO_IDX && !jioChannels.length) switchTab(0);
+      e.preventDefault();
+      return;
+    }
+
+    // Arrow up/down: navigate between focusable elements
+    if (k === 'ArrowUp' || c === 38) {
+      focusModalElement(-1);
+      e.preventDefault();
+      return;
+    }
+    if (k === 'ArrowDown' || c === 40) {
+      focusModalElement(1);
+      e.preventDefault();
+      return;
+    }
+
+    // Enter/OK: click the focused button or submit input
+    if (k === 'Enter' || c === 13) {
+      const focused = document.activeElement;
+      if (focused && (focused.tagName === 'BUTTON' || (focused.tagName === 'INPUT' && focused.type === 'button'))) {
+        focused.click();
+      } else if (focused && focused.tagName === 'INPUT' && focused.type !== 'button') {
+        // If input is focused, trigger the primary button in the visible step
+        const step1 = document.getElementById('jioLoginStep1');
+        const step2 = document.getElementById('jioLoginStep2');
+        const visibleContainer = step1.style.display !== 'none' ? step1 : step2;
+        const buttons = getFocusableElements(visibleContainer).filter(el => el.tagName === 'BUTTON');
+        if (buttons.length) buttons[0].click();
+      }
+      e.preventDefault();
+      return;
+    }
+
+    // For other keys, don't let them propagate to the rest of the app
+    e.preventDefault();
+    return;
+  }
+
+  // ---- Normal key handling (outside modal) ----
+  if ((c >= 48 && c <= 57) || (c >= 96 && c <= 105)) {
+    if (focusArea !== 'search') {
+      handleDigit(String(c >= 96 ? c - 96 : c - 48));
+      e.preventDefault();
+      return;
+    }
+  }
+
+  if (k === 'Escape' || k === 'Back' || k === 'GoBack' || c === 10009 || c === 27) {
+    if (isFullscreen) {
+      exitFS();
+      e.preventDefault();
+      return;
+    }
+
+    if (focusArea === 'ar') {
+      setFocus('list');
+      e.preventDefault();
+      return;
+    }
+
+    if (focusArea === 'search') {
+      clearSearch();
+      e.preventDefault();
+      return;
+    }
+
+    flushCriticalStorage();
+    try {
+      if (window.tizen) tizen.application.getCurrentApplication().exit();
+    } catch (e2) {}
+    e.preventDefault();
+    return;
+  }
+
+  if (focusArea === 'ar') {
+    if (k === 'Enter' || c === 13) {
+      cycleAR();
+      e.preventDefault();
+      return;
+    }
+    if (k === 'ArrowLeft' || c === 37 || k === 'ArrowDown' || c === 40) {
+      setFocus('list');
+      e.preventDefault();
+      return;
+    }
+    if (k === 'ArrowRight' || c === 39 || k === 'ArrowUp' || c === 38) {
+      cycleAR();
+      e.preventDefault();
+      return;
+    }
+    e.preventDefault();
+    return;
+  }
+
+  if (focusArea === 'search') {
+    if (k === 'Enter' || c === 13) {
+      commitSearch();
+      e.preventDefault();
+      return;
+    }
+    if (k === 'ArrowDown' || k === 'ArrowUp' || c === 40 || c === 38) {
+      commitSearch();
+      e.preventDefault();
+      return;
+    }
+    return;
+  }
+
+  if (k === 'ArrowUp' || c === 38) {
+    isFullscreen ? showFsHint() : moveSel(-1);
+    e.preventDefault();
+    return;
+  }
+
+  if (k === 'ArrowDown' || c === 40) {
+    isFullscreen ? showFsHint() : moveSel(1);
+    e.preventDefault();
+    return;
+  }
+
+  if (k === 'ArrowLeft' || c === 37) {
+    if (isFullscreen) {
+      exitFS();
+      e.preventDefault();
+      return;
+    }
+    setFocus('list');
+    e.preventDefault();
+    return;
+  }
+
+  if (k === 'ArrowRight' || c === 39) {
+    if (isFullscreen) {
+      showFsHint();
+      e.preventDefault();
+      return;
+    }
+    setFocus('ar');
+    e.preventDefault();
+    return;
+  }
+
+  if (k === 'Enter' || c === 13) {
+    if (isFullscreen) {
+      exitFS();
+      e.preventDefault();
+      return;
+    }
+    if (focusArea === 'list') {
+      playSelected();
+      setTimeout(() => { if (hasPlayed) enterFS(); }, 600);
+    }
+    e.preventDefault();
+    return;
+  }
+
+  if (k === 'PageUp') {
+    moveSel(-10);
+    e.preventDefault();
+    return;
+  }
+
+  if (k === 'PageDown') {
+    moveSel(10);
+    e.preventDefault();
+    return;
+  }
+
+  if (k === 'MediaPlayPause' || c === 10252) {
+    if (video.paused) video.play().catch(() => {});
+    else video.pause();
+    e.preventDefault();
+    return;
+  }
+
+  if (k === 'MediaPlay' || c === 415) {
+    video.play().catch(() => {});
+    e.preventDefault();
+    return;
+  }
+
+  if (k === 'MediaPause' || c === 19) {
+    video.pause();
+    e.preventDefault();
+    return;
+  }
+
+  if (k === 'MediaStop' || c === 413) {
+    cancelPreview();
+    if (player) player.unload();
+    video.pause();
+    video.removeAttribute('src');
+    setStatus('Stopped', 'idle');
+    finishLoadBar();
+    e.preventDefault();
+    return;
+  }
+
+  if (k === 'MediaFastForward' || c === 417 || k === 'ChannelUp' || c === 427) {
+    moveSel(1);
+    e.preventDefault();
+    return;
+  }
+
+  if (k === 'MediaRewind' || c === 412 || k === 'ChannelDown' || c === 428) {
+    moveSel(-1);
+    e.preventDefault();
+    return;
+  }
+
+  // RED BUTTON: reload current playlist
+  if (k === 'ColorF0Red' || c === 403) {
+    reloadCurrentPlaylist();
+    e.preventDefault();
+    return;
+  }
+
+  if (k === 'ColorF1Green' || c === 404) {
+    if (filtered.length && focusArea === 'list') toggleFav(filtered[selectedIndex]);
+    e.preventDefault();
+    return;
+  }
+
+  if (k === 'ColorF2Yellow' || c === 405) {
+    setFocus('search');
+    e.preventDefault();
+    return;
+  }
+
+  if (k === 'ColorF3Blue' || c === 406) {
+    if (hasPlayed) toggleFS();
+    e.preventDefault();
+  }
+});
+
+async function wakeProxy() {
+  const ctrl = new AbortController();
+  const tid = setTimeout(() => ctrl.abort(), 55000);
+
+  try {
+    await fetch(PROXY + '/ping', { signal: ctrl.signal });
+  } catch (e) {
+    console.warn('[proxy warm-up failed]', e.message);
+  } finally {
+    clearTimeout(tid);
+  }
 }
 
 document.addEventListener('visibilitychange', () => {
