@@ -1,6 +1,6 @@
 // ================================================================
-// IPTV Pro — app.js v12.0 | Samsung Tizen OS9 TV
-// Full replacement for broken app.js
+// IPTV Pro — app.js v12.1 | Samsung Tizen OS9 TV
+// Fixed playlist loading, removed red glow, improved error handling
 // ================================================================
 
 const PROXY = 'https://houser-af7j.onrender.com';
@@ -560,6 +560,7 @@ function mirrorUrl(url) {
   }
 }
 
+// FIXED: loadPlaylist with proxy fallback and better error handling
 function loadPlaylist(urlOv) {
   cancelPreview();
 
@@ -586,18 +587,19 @@ function loadPlaylist(urlOv) {
 
   xhrFetch(url, 25000, (err, text) => {
     if (err) {
-      const m = mirrorUrl(url);
-      if (m) {
-        setStatus('Retrying…', 'loading');
-        xhrFetch(m, 25000, (e2, t2) => {
-          finishLoadBar();
-          if (e2) setStatus('Failed', 'error');
-          else onLoaded(t2, false);
-        });
-      } else {
+      console.warn('[IPTV] Direct fetch failed for', url, err);
+      // Try the proxy as fallback (allows CORS and might succeed)
+      const proxyUrl = PROXY + '/fetch?url=' + encodeURIComponent(url);
+      xhrFetch(proxyUrl, 25000, (e2, t2) => {
         finishLoadBar();
-        setStatus('Failed', 'error');
-      }
+        if (e2) {
+          console.error('[IPTV] Proxy fetch also failed', e2);
+          setStatus('Failed to load playlist', 'error');
+          showToast('Playlist could not be loaded. Check network.');
+        } else {
+          onLoaded(t2, false);
+        }
+      });
       return;
     }
 
@@ -609,6 +611,14 @@ function loadPlaylist(urlOv) {
 
   function onLoaded(text, fromCache) {
     channels = parseM3U(text);
+    if (!channels.length) {
+      setStatus('Playlist empty or invalid', 'error');
+      showToast('No channels found in the playlist.');
+      filtered = [];
+      renderList();
+      return;
+    }
+
     const seen = new Set(allChannels.map(c => c.url));
     channels.forEach(c => {
       if (!seen.has(c.url)) allChannels.push(c);
@@ -841,11 +851,16 @@ function setFocus(a) {
   }
 }
 
+// FIXED: switchTab ensures playlist is loaded and handles Jio fallback
 function switchTab(idx) {
   plIdx = idx;
   document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', i === idx));
-  if (idx === JIO_IDX) handleJioTab();
-  else loadPlaylist();
+  if (idx === JIO_IDX) {
+    handleJioTab();
+  } else {
+    setStatus('Loading…', 'loading');
+    loadPlaylist();
+  }
 }
 
 tabBar.querySelectorAll('.tab').forEach((b, i) => {
@@ -1401,6 +1416,7 @@ function showJioLoginModal() {
   }
 }
 
+// FIXED: handleJioTab now falls back to first playlist if not logged in
 async function handleJioTab() {
   if (jioChannels.length) {
     channels = jioChannels.slice();
@@ -1456,7 +1472,9 @@ async function handleJioTab() {
       }
     }
 
-    showJioLoginModal();
+    // No valid Jio session – fall back to first playlist (Telugu)
+    console.log('[IPTV] Jio not logged in, switching to first playlist');
+    switchTab(0);
   });
 }
 
