@@ -1,7 +1,8 @@
 // ================================================================
 // IPTV Pro — app.js v14.0 | Samsung Tizen OS9 TV
 // JIO removed. All playlist fetches direct (no proxy).
-// Added: network indicator, auto-retry, fullscreen fill.
+// Added: network indicator, fullscreen fill.
+// Auto‑retry removed – Shaka's built-in retry handles failures.
 // ================================================================
 
 const FAV_KEY = 'iptv:favs';
@@ -60,9 +61,7 @@ let toastEl       = null;
 let toastTm       = null;
 let favSet        = new Set();
 
-// --- Retry & network state ---
-let retryCount = 0;
-let retryTimer = null;
+// --- Network state (no retry variables) ---
 let networkQuality = 'online'; // 'online', 'slow', 'offline'
 let connectionMonitor = null;
 
@@ -490,22 +489,6 @@ function stopNetworkMonitoring() {
   if (connectionMonitor) clearInterval(connectionMonitor);
 }
 
-// ── Auto‑retry on stream error ─────────────────────────────────
-function scheduleStreamRetry(channelUrl) {
-  if (retryTimer) clearTimeout(retryTimer);
-  const delay = Math.min(30000, 1000 * Math.pow(2, retryCount));
-  retryCount++;
-  setStatus(`Retrying in ${delay / 1000}s…`, 'loading');
-  retryTimer = setTimeout(() => {
-    retryTimer = null;
-    doPlay(channelUrl).catch(err => {
-      console.error('Retry failed', err);
-      if (retryCount < 5) scheduleStreamRetry(channelUrl);
-      else setStatus('Playback failed', 'error');
-    });
-  }, delay);
-}
-
 // ── Shaka player ─────────────────────────────────────────────────
 async function initShaka() {
   shaka.polyfill.installAll();
@@ -523,22 +506,14 @@ async function initShaka() {
 
   player.addEventListener('error', e => {
     console.error('[Shaka]', e.detail);
-    const retryCodes = [1001, 1002, 1003, 1006, 1007, 6007, 6008];
-    if (retryCodes.includes(e.detail.code)) {
-      setStatus('Stream error, retrying…', 'error');
-      const currentUrl = video.src || (filtered[selectedIndex] && filtered[selectedIndex].url);
-      if (currentUrl) scheduleStreamRetry(currentUrl);
-    } else {
-      setStatus('Stream error', 'error');
-      finishLoadBar();
-    }
+    setStatus('Stream error', 'error');
+    finishLoadBar();
   });
 }
 
 async function doPlay(url) {
   if (!player) await initShaka();
   try {
-    retryCount = 0; // reset on successful play attempt
     await player.unload();
     video.removeAttribute('src');
     await player.load(url);
@@ -547,9 +522,6 @@ async function doPlay(url) {
     console.error('[Shaka] load error', err);
     setStatus('Play error', 'error');
     finishLoadBar();
-    if (err.code && [1001,1002,1003].includes(err.code)) {
-      scheduleStreamRetry(url);
-    }
   }
 }
 
