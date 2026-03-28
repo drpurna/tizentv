@@ -1071,3 +1071,45 @@ body.fullscreen .overlay-bottom {
 * {
   outline: none;
 }
+
+/* ── AV Sync controls ────────────────────────────────────── */
+#avSyncWrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 6px;
+}
+
+#avSyncWrap .ar-btn {
+  font-size: 11px;
+  padding: 0 8px;
+  height: 32px;
+  opacity: 0.85;
+}
+
+#avSyncWrap .ar-btn:hover {
+  opacity: 1;
+}
+
+/* ── Channel group label in list ─────────────────────────── */
+.ch-group {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+  opacity: 0.7;
+}
+
+/* ── Xtream login button disabled state ──────────────────── */
+#xtreamLoginBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Network indicator states ────────────────────────────── */
+.network-indicator.offline { color: #ff4444; }
+.network-indicator.slow    { color: #f0c400; }
+.network-indicator.online  { color: #4caf50; }
