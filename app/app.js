@@ -1,6 +1,6 @@
 // ================================================================
 // IPTV Pro — app.js v15.0 | Samsung Tizen OS9 TV
-// Modern channel list, program placeholders, playlist manager
+// Dark theme with white accents, fullscreen overlays toggle
 // ================================================================
 
 const FAV_KEY = 'iptv:favs';
@@ -81,6 +81,7 @@ let networkQuality = 'online';
 let connectionMonitor = null;
 let progressInterval = null;
 let currentProgramDuration = 300; // default 5 minutes for simulated progress
+let overlaysVisible = true;        // track overlay visibility for fullscreen
 
 // ── localStorage helpers ────────────────────────────────────────
 function lsSet(key, value) {
@@ -278,7 +279,6 @@ function initials(n) {
 
 // ── Program info (simulated, no EPG required) ───────────────────
 function getProgramInfo(channelName) {
-  // Generate consistent but varied program info based on channel name
   const programs = [
     { time: 'Now', title: 'Live Broadcast', desc: 'Currently airing' },
     { time: '20:00', title: 'Prime Time', desc: 'Evening programming' },
@@ -290,12 +290,9 @@ function getProgramInfo(channelName) {
     { time: '16:00', title: 'Music Mix', desc: 'Top hits' }
   ];
   
-  // Use channel name hash to pick a consistent program
   const hash = channelName.split('').reduce((a, b) => { a = ((a << 5) - a) + b.charCodeAt(0); return a & a; }, 0);
   const index = Math.abs(hash) % programs.length;
   const program = programs[index];
-  
-  // Next program (different from current)
   const nextIndex = (index + 1) % programs.length;
   const nextProgram = programs[nextIndex];
   
@@ -305,7 +302,6 @@ function getProgramInfo(channelName) {
   };
 }
 
-// Update overlay with channel and program info
 function updateOverlayInfo(channelName, channelIndex) {
   if (overlayChannelName) overlayChannelName.textContent = channelName;
   if (npChNumEl) npChNumEl.textContent = 'CH ' + (channelIndex + 1);
@@ -316,7 +312,6 @@ function updateOverlayInfo(channelName, channelIndex) {
   if (nextProgramInfo) nextProgramInfo.textContent = `Next: ${program.next.title} at ${program.next.time}`;
 }
 
-// Start simulated progress bar
 function startProgressSimulation(duration = 300) {
   if (progressInterval) clearInterval(progressInterval);
   let startTime = Date.now();
@@ -325,9 +320,7 @@ function startProgressSimulation(duration = 300) {
     const percent = Math.min(100, (elapsed / duration) * 100);
     if (progressBar) progressBar.style.width = `${percent}%`;
     if (percent >= 100) {
-      // Reset for next program (simulate program change)
       startTime = Date.now();
-      // Update program title to next
       const currentChannel = filtered[selectedIndex];
       if (currentChannel) {
         const program = getProgramInfo(currentChannel.name);
@@ -339,7 +332,6 @@ function startProgressSimulation(duration = 300) {
   }, 100);
 }
 
-// Update channel tech info from player stats
 function updateChannelTech() {
   if (!player) return;
   try {
@@ -729,7 +721,7 @@ function updateClock() {
 setInterval(updateClock, 1000);
 updateClock();
 
-// ── Weather (optional - uses free API, comment out if no key) ───
+// ── Weather (optional - hides if no API key) ────────────────────
 async function fetchWeather(lat, lon) {
   // Uncomment and add your API key from openweathermap.org if desired
   // const apiKey = 'YOUR_API_KEY';
@@ -744,7 +736,6 @@ async function fetchWeather(lat, lon) {
   // } catch (e) {
   //   console.warn('Weather fetch failed', e);
   // }
-  // For now, hide weather section if not used
   const weatherInfo = document.getElementById('weatherInfo');
   if (weatherInfo) weatherInfo.style.display = 'none';
 }
@@ -865,7 +856,7 @@ video.addEventListener('error', () => {
   finishLoadBar();
 });
 
-// ── Fullscreen with forced fill ─────────────────────────────────
+// ── Fullscreen with overlays toggle ─────────────────────────────
 function showFsHint() {
   clearTimeout(fsHintTimer);
   fsHint.classList.add('visible');
@@ -885,6 +876,14 @@ function enterFS() {
   arIdx = 1;
   arBtn.textContent = '⛶ ' + AR_MODES[1].label;
   arBtn.className = 'ar-btn ar-fill';
+  
+  // Hide overlays when entering fullscreen
+  if (overlayTop && overlayBottom) {
+    overlayTop.classList.remove('info-visible');
+    overlayBottom.classList.remove('info-visible');
+    overlaysVisible = false;
+  }
+  
   showFsHint();
 }
 
@@ -908,10 +907,17 @@ function exitFS() {
     arBtn.textContent = '⛶ ' + m.label;
     arBtn.className = 'ar-btn' + (m.cls ? ' ' + m.cls : '');
   }
+  
+  // Restore overlays when exiting fullscreen (if they were visible before)
+  if (overlayTop && overlayBottom && overlaysVisible) {
+    overlayTop.classList.add('info-visible');
+    overlayBottom.classList.add('info-visible');
+  }
 }
 
 function toggleFS() { isFullscreen ? exitFS() : enterFS(); }
 
+// Handle fullscreen change events (ESC key)
 document.addEventListener('fullscreenchange', () => {
   isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement);
   if (!isFullscreen) {
@@ -927,6 +933,11 @@ document.addEventListener('fullscreenchange', () => {
       arIdx = restoreMode;
       arBtn.textContent = '⛶ ' + m.label;
       arBtn.className = 'ar-btn' + (m.cls ? ' ' + m.cls : '');
+    }
+    // Restore overlays when exiting fullscreen via ESC
+    if (overlayTop && overlayBottom && overlaysVisible) {
+      overlayTop.classList.add('info-visible');
+      overlayBottom.classList.add('info-visible');
     }
   }
 });
@@ -946,6 +957,10 @@ document.addEventListener('webkitfullscreenchange', () => {
       arBtn.textContent = '⛶ ' + m.label;
       arBtn.className = 'ar-btn' + (m.cls ? ' ' + m.cls : '');
     }
+    if (overlayTop && overlayBottom && overlaysVisible) {
+      overlayTop.classList.add('info-visible');
+      overlayBottom.classList.add('info-visible');
+    }
   }
 });
 video.addEventListener('dblclick', toggleFS);
@@ -953,9 +968,16 @@ video.addEventListener('dblclick', toggleFS);
 // ── Toggle overlays with Info button ────────────────────────────
 function toggleOverlays() {
   if (!overlayTop || !overlayBottom) return;
-  const visible = overlayTop.style.opacity !== '0';
-  overlayTop.style.opacity = visible ? '0' : '1';
-  overlayBottom.style.opacity = visible ? '0' : '1';
+  
+  if (overlayTop.classList.contains('info-visible')) {
+    overlayTop.classList.remove('info-visible');
+    overlayBottom.classList.remove('info-visible');
+    overlaysVisible = false;
+  } else {
+    overlayTop.classList.add('info-visible');
+    overlayBottom.classList.add('info-visible');
+    overlaysVisible = true;
+  }
 }
 
 // ── Channel dialer with commit ───────────────────────────────────
@@ -1213,9 +1235,12 @@ function handleSavePlaylist() {
     loadPlaylist();
   }
 
-  // Show overlays initially
-  if (overlayTop) overlayTop.style.opacity = '1';
-  if (overlayBottom) overlayBottom.style.opacity = '1';
+  // Initialize overlays (visible by default)
+  if (overlayTop && overlayBottom) {
+    overlayTop.classList.add('info-visible');
+    overlayBottom.classList.add('info-visible');
+    overlaysVisible = true;
+  }
 
   // Modal event listeners
   if (addPlaylistBtn) addPlaylistBtn.addEventListener('click', openAddPlaylistModal);
@@ -1230,7 +1255,7 @@ function handleSavePlaylist() {
     navigator.geolocation.getCurrentPosition(pos => {
       fetchWeather(pos.coords.latitude, pos.coords.longitude);
     }, () => {
-      fetchWeather(51.5074, -0.1278); // London fallback
+      fetchWeather(51.5074, -0.1278);
     });
   } else {
     fetchWeather(51.5074, -0.1278);
