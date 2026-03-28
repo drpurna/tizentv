@@ -369,7 +369,7 @@ video.addEventListener('timeupdate', function() {
 
 // ── Virtual scroll (tile style) ──────────────────────────────────
 var VS = {
-  ITEM_H: 130,
+  ITEM_H: 148,
   OVERSCAN: 6,
   c: null, inner: null, vh: 0, st: 0,
   total: 0, rs: -1, re: -1, nodes: [], raf: null,
