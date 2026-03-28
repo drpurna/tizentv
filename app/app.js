@@ -637,7 +637,7 @@ function updateClock() {
   var now = new Date();
   var te = document.getElementById('currentTime');
   var de = document.getElementById('currentDate');
-  var clk = document.getElementById('clockDisplay');
+  var clk = document.getElementById('brandClock');   // changed
   var timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   var dateStr = now.toLocaleDateString([], { weekday: 'short', day: '2-digit', month: 'short' });
   if (te) te.textContent = timeStr;
