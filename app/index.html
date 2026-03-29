@@ -2,170 +2,103 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>IPTV Pro</title>
-
-  <meta http-equiv="Content-Security-Policy"
-        content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;
-                 media-src * blob: data:;
-                 connect-src *;
-                 font-src * data:;"/>
-
-  <link rel="preconnect" href="https://fonts.googleapis.com"/>
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet"/>
-
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
+  <title>IPTV Pro - Xtream & M3U Player</title>
+  
   <link rel="stylesheet" href="style.css"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 </head>
 <body>
 
 <div class="app">
-
+  <!-- Sidebar -->
   <div class="sidebar">
-
     <div class="brand">
-      <div class="brand-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="#fff"
-             stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="23 7 16 12 23 17 23 7"/>
-          <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
-        </svg>
-      </div>
-      <span class="brand-title">IPTV</span>
-      <div id="brandClock" class="brand-clock"></div>
+      <h1>IPTV·PRO</h1>
+      <div class="clock" id="liveClock">--:--</div>
     </div>
-
-    <div class="search-wrap" id="searchWrap">
-      <svg class="search-icon" viewBox="0 0 24 24" fill="none"
-           stroke="currentColor" stroke-width="2">
-        <circle cx="11" cy="11" r="8"/>
-        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-      </svg>
-      <input id="searchInput" type="search"
-             placeholder="Search channels…"
-             autocomplete="off" autocorrect="off" spellcheck="false"/>
+    
+    <div class="search-wrap">
+      <input type="text" id="searchInput" placeholder="🔍 Search channels..." autocomplete="off">
     </div>
-
+    
     <div class="tab-bar" id="tabBar"></div>
-
-    <div class="list-head">
-      <span class="lbl">CHANNELS</span>
-      <div class="list-head-actions">
-        <button id="addPlaylistBtn" class="add-playlist-btn" title="Add playlist">+</button>
+    
+    <div class="list-header">
+      <span>📺 CHANNELS</span>
+      <div style="display: flex; gap: 12px;">
+        <button class="add-playlist-btn" id="addPlaylistBtn">+</button>
         <span id="countBadge">0</span>
       </div>
     </div>
-
-    <ul id="channelList"></ul>
-
-    <div class="ch-dialer" id="chDialer">
-      <div id="chDialerNum">—</div>
-    </div>
-
+    
+    <div id="channelList"></div>
+    
     <div class="hint-bar">
-      <div class="hint-item"><div class="dot red"></div><span>Tab</span></div>
-      <div class="hint-item"><div class="dot green"></div><span>Fav</span></div>
-      <div class="hint-item"><div class="dot yellow"></div><span>Search</span></div>
-      <div class="hint-item"><div class="dot blue"></div><span>FS</span></div>
-      <div class="hint-item"><div class="dot info"></div><span>Info</span></div>
+      <span>🔴 TAB switch</span>
+      <span>🟢 FAV</span>
+      <span>🟡 SEARCH</span>
+      <span>🔵 FULLSCREEN</span>
+      <span>0-9 dial</span>
     </div>
-
   </div>
 
+  <!-- Player Area -->
   <div class="player-area">
-
     <div class="player-header">
-      <div class="np-info">
-        <div class="np-ch-num" id="npChNum"></div>
-        <h2 id="nowPlaying">Select a channel</h2>
-      </div>
+      <div class="now-playing" id="nowPlaying">Select channel</div>
       <div class="player-controls">
         <button class="ar-btn" id="arBtn">⛶ Fit</button>
-        <div class="network-indicator" id="networkIndicator" title="Network status">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-            <path d="M2 12l2 2 4-4 4 4 4-4 4 4 2-2-6-6-4 4-4-4-4 4z"/>
-          </svg>
-        </div>
-        <span class="status-badge idle" id="statusBadge">IDLE</span>
+        <span class="status" id="statusBadge">● IDLE</span>
       </div>
     </div>
-
-    <div class="load-bar" id="loadBar"></div>
-
+    
     <div class="video-wrap" id="videoWrap">
       <video id="video" playsinline autoplay></video>
-
-      <div class="overlay-top" id="overlayTop">
-        <div class="time-date">
-          <span id="currentTime"></span>
-          <span id="currentDate"></span>
-        </div>
-        <div class="weather-info" id="weatherInfo">
-          <span id="weatherTemp"></span>
-          <span id="weatherDesc"></span>
-        </div>
+      <div class="overlay-bottom">
+        <div id="overlayChannelName" style="font-weight: bold; font-size: 1.4rem;"></div>
+        <div id="overlayTech" class="channel-tech"></div>
       </div>
-
-      <div class="overlay-bottom" id="overlayBottom">
-        <div class="channel-details">
-          <div class="channel-name" id="overlayChannelName">Channel</div>
-          <div class="channel-tech" id="overlayChannelTech"></div>
-        </div>
-        <div class="program-info">
-          <div class="program-title" id="overlayProgramTitle"></div>
-          <div class="program-desc" id="overlayProgramDesc"></div>
-          <div class="next-program" id="nextProgramInfo"></div>
-        </div>
-      </div>
-
-      <div class="video-overlay" id="videoOverlay">
-        <div class="overlay-icon">▶</div>
-        <div class="overlay-hint">
-          Press <strong>Enter / OK</strong> to play<br/>
-          <span>↑↓ browse &nbsp;·&nbsp; RED = tab &nbsp;·&nbsp; BLUE = fullscreen &nbsp;·&nbsp; 0–9 = dial channel</span>
-        </div>
-      </div>
-
-      <div class="fs-hint" id="fsHint">Press BACK or ENTER to exit fullscreen</div>
     </div>
-
+    
+    <div class="channel-dialer" id="channelDialer">
+      <div class="dialer-number" id="dialerNum">—</div>
+    </div>
   </div>
-
 </div>
 
-<!-- Add Playlist Modal -->
-<div id="addPlaylistModal" class="modal">
+<!-- Modals -->
+<div id="playlistModal" class="modal">
   <div class="modal-content">
-    <h3>Add Playlist</h3>
-    <input type="text" id="playlistName" placeholder="Playlist name" autocomplete="off" />
-    <input type="url" id="playlistUrl" placeholder="M3U URL" autocomplete="off" />
+    <h3>Add M3U Playlist</h3>
+    <input type="text" id="plName" placeholder="Name (e.g., India)" autocomplete="off">
+    <input type="url" id="plUrl" placeholder="M3U URL" autocomplete="off">
     <div class="modal-buttons">
-      <button id="savePlaylistBtn">Save</button>
-      <button id="cancelPlaylistBtn">Cancel</button>
+      <button id="savePlBtn">Save</button>
+      <button id="cancelPlBtn">Cancel</button>
     </div>
   </div>
 </div>
 
-<!-- Xtream Login Modal -->
-<div id="xtreamLoginModal" class="modal">
-  <div class="modal-content" style="max-width: 500px;">
+<div id="xtreamModal" class="modal">
+  <div class="modal-content">
     <h3>Xtream Codes Login</h3>
-    <input type="url" id="xtreamServerUrl" placeholder="Server URL (e.g., http://server:8080)" autocomplete="off" />
-    <input type="text" id="xtreamUsername" placeholder="Username" autocomplete="off" />
-    <input type="password" id="xtreamPassword" placeholder="Password" autocomplete="off" />
+    <input type="url" id="xtreamServer" placeholder="Server URL (http://ip:port)" autocomplete="off">
+    <input type="text" id="xtreamUser" placeholder="Username" autocomplete="off">
+    <input type="password" id="xtreamPass" placeholder="Password" autocomplete="off">
+    <div id="xtreamStatus" style="font-size:12px; margin:6px 0;"></div>
     <div class="modal-buttons">
       <button id="xtreamLoginBtn">Login</button>
       <button id="xtreamCancelBtn">Cancel</button>
     </div>
-    <div id="xtreamLoginStatus" style="margin-top: 12px; font-size: 12px; text-align: center;"></div>
-    <div id="xtreamAccountInfo" style="margin-top: 8px; font-size: 11px; text-align: center; color: #888;"></div>
   </div>
 </div>
 
-<!-- Xtream modules (combined non‑module script inside xtream folder) -->
-<script src="xtream/xtream.js"></script>
+<div id="toast" class="toast"></div>
 
+<!-- Scripts -->
 <script src="shaka.js"></script>
+<script src="xtream.js"></script>
 <script src="app.js"></script>
 
 </body>
